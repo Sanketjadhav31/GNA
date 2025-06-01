@@ -115,13 +115,13 @@ const orderService = {
   // Create new order
   createOrder: async (orderData) => {
     try {
-      console.log('📝 Creating new order...');
+      console.log('📦 Creating order via API...');
       const response = await api.post('/orders', orderData);
-      console.log('✅ Order created successfully:', response.data.data?.orderId);
+      console.log('✅ Order created via API:', response.data);
       return response.data;
     } catch (error) {
-      console.error('❌ Error creating order:', error);
-      throw new Error(error.response?.data?.message || 'Failed to create order');
+      console.error('❌ API order creation failed:', error);
+      throw error;
     }
   },
 
@@ -211,23 +211,32 @@ const orderService = {
   },
 
   // Get my current order (for partners)
-  getCurrentOrder: async () => {
+  getCurrentOrder: async (partnerId) => {
     try {
-      console.log('📋 Fetching current order...');
-      const response = await api.get('/orders/my-current');
-      console.log('✅ Current order fetched');
-      return response.data;
+      console.log('📋 Fetching current order for partner:', partnerId);
+      
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Get orders from localStorage
+      const globalOrders = JSON.parse(localStorage.getItem('global_orders') || '[]');
+      
+      // Find the current active order for this partner
+      const currentOrder = globalOrders.find(order => 
+        order.assignedPartner === partnerId && 
+        ['PICKED', 'ON_ROUTE'].includes(order.status)
+      );
+      
+      console.log('✅ Current order fetched:', currentOrder ? currentOrder.orderId : 'None');
+      
+      return {
+        success: true,
+        data: currentOrder || null,
+        message: currentOrder ? 'Current order found' : 'No active order'
+      };
     } catch (error) {
       console.error('❌ Error fetching current order:', error);
-      // Return empty response if no current order
-      if (error.response?.status === 404) {
-        return {
-          success: true,
-          data: null,
-          message: 'No active order found'
-        };
-      }
-      throw new Error(error.response?.data?.message || 'Failed to fetch current order');
+      throw new Error('Failed to fetch current order');
     }
   },
 
@@ -431,6 +440,418 @@ const orderService = {
       const hours = Math.floor(diffInMinutes / 60);
       const minutes = diffInMinutes % 60;
       return `${hours}h ${minutes}m until dispatch`;
+    }
+  },
+
+  // Get assigned orders for partner (localStorage implementation)
+  getAssignedOrders: async (partnerId) => {
+    try {
+      console.log('📋 Fetching assigned orders for partner:', partnerId);
+      
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Get orders from localStorage
+      const globalOrders = JSON.parse(localStorage.getItem('global_orders') || '[]');
+      
+      // Filter orders assigned to this partner that are not delivered
+      const assignedOrders = globalOrders.filter(order => 
+        order.assignedPartner === partnerId && 
+        ['PREP', 'PICKED', 'ON_ROUTE'].includes(order.status)
+      );
+      
+      console.log('✅ Assigned orders fetched:', assignedOrders.length);
+      
+      return {
+        success: true,
+        data: assignedOrders,
+        message: `Found ${assignedOrders.length} assigned orders`
+      };
+    } catch (error) {
+      console.error('❌ Error fetching assigned orders:', error);
+      throw new Error('Failed to fetch assigned orders');
+    }
+  },
+
+  // ===== BACKEND API INTEGRATION =====
+  
+  // Get partner's current assigned order (Backend API)
+  getPartnerCurrentOrder: async (partnerEmail = null) => {
+    try {
+      console.log('📦 Fetching partner current order via API...');
+      
+      const params = {};
+      if (partnerEmail) {
+        params.partnerEmail = partnerEmail;
+        console.log('📧 Using partner email for identification:', partnerEmail);
+      }
+      
+      const response = await api.get('/orders/my-current', { params });
+      console.log('✅ Partner current order fetched via API:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ API partner current order fetch failed:', error);
+      throw error;
+    }
+  },
+
+  // Assign partner to order (Backend API)
+  assignPartnerToOrder: async (orderId, partnerId, partnerEmail = null) => {
+    try {
+      console.log('👥 Assigning partner to order via API...');
+      console.log('📋 Assignment details:', { orderId, partnerId, partnerEmail });
+      
+      const assignmentData = { partnerId };
+      
+      // Include partner email for identification if provided
+      if (partnerEmail) {
+        assignmentData.partnerEmail = partnerEmail;
+      }
+      
+      const response = await api.put(`/orders/${orderId}/assign-partner`, assignmentData);
+      console.log('✅ Partner assigned via API:', response.data);
+      
+      // Emit real-time event for immediate partner notification
+      if (response.data.success && response.data.data?.order) {
+        const order = response.data.data.order;
+        const partner = order.assignedTo;
+        
+        // Emit Socket.IO event for real-time assignment
+        window.dispatchEvent(new CustomEvent('partner-order-assigned', {
+          detail: {
+            orderId: order._id,
+            orderNumber: order.orderId,
+            partnerId: partner._id,
+            partnerName: partner.name,
+            partnerEmail: partner.email || partnerEmail,
+            customerName: order.customerName,
+            customerPhone: order.customerPhone,
+            customerAddress: order.customerAddress,
+            totalAmount: order.totalAmount,
+            items: order.items,
+            specialInstructions: order.specialInstructions,
+            estimatedDeliveryTime: order.estimatedDeliveryTime,
+            priority: order.priority,
+            assignedAt: order.assignedAt,
+            source: 'backend'
+          }
+        }));
+        
+        console.log('📡 Real-time assignment event emitted for partner:', partner.email || partnerEmail);
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error('❌ API partner assignment failed:', error);
+      throw error;
+    }
+  },
+
+  // Update order status (Backend API)
+  updateOrderStatusBackend: async (orderId, status) => {
+    try {
+      console.log('🔄 Updating order status via API...');
+      console.log('📋 Status update:', { orderId, status });
+      
+      const response = await api.put(`/orders/${orderId}/status`, { status });
+      console.log('✅ Order status updated via API:', response.data);
+      
+      // Emit real-time event for status update
+      if (response.data.success) {
+        window.dispatchEvent(new CustomEvent('order-status-updated-backend', {
+          detail: {
+            orderId,
+            newStatus: status,
+            source: 'backend',
+            timestamp: new Date()
+          }
+        }));
+        
+        console.log('📡 Real-time status update event emitted');
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error('❌ API status update failed:', error);
+      throw error;
+    }
+  },
+
+  // Get available partners for assignment (Backend API)
+  getAvailablePartners: async () => {
+    try {
+      console.log('👥 Fetching available partners from backend...');
+      
+      // Try the orders endpoint first
+      try {
+        const response = await api.get('/orders/partners/available');
+        console.log('✅ Available partners fetched from orders endpoint');
+        return response.data;
+      } catch (ordersError) {
+        console.log('⚠️ Orders endpoint failed, trying partners endpoint:', ordersError.message);
+        
+        // Try the partners endpoint as fallback
+        try {
+          const response = await api.get('/partners/available');
+          console.log('✅ Available partners fetched from partners endpoint');
+          return response.data;
+        } catch (partnersError) {
+          console.log('⚠️ Partners endpoint also failed:', partnersError.message);
+          throw partnersError;
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error fetching available partners from backend:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch available partners');
+    }
+  },
+
+  // Create order via backend API
+  createOrderBackend: async (orderData) => {
+    try {
+      console.log('📝 Creating new order via backend...');
+      const response = await api.post('/orders', orderData);
+      console.log('✅ Order created successfully via backend:', response.data.data?.order?.orderId);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error creating order via backend:', error);
+      throw new Error(error.response?.data?.message || 'Failed to create order');
+    }
+  },
+
+  // Get all orders via backend API
+  getAllOrdersBackend: async (filters = {}) => {
+    try {
+      console.log('📋 Fetching all orders from backend with filters:', filters);
+      const params = new URLSearchParams();
+      
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+          params.append(key, filters[key]);
+        }
+      });
+      
+      const response = await api.get(`/orders?${params.toString()}`);
+      console.log('✅ Orders fetched successfully from backend:', response.data.data?.orders?.length || 0);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error fetching orders from backend:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch orders');
+    }
+  },
+
+  // Get available orders for assignment (Manager only)
+  getAvailableOrders: async () => {
+    try {
+      console.log('📋 Fetching available orders via API...');
+      const response = await api.get('/orders/available');
+      console.log('✅ Available orders fetched via API:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ API available orders fetch failed:', error);
+      throw error;
+    }
+  },
+
+  // Enhanced real-time order assignment with email-based partner identification
+  assignOrderToPartnerByEmail: async (orderId, partnerEmail, orderData = {}) => {
+    try {
+      console.log('📧 Assigning order to partner by email...');
+      console.log('📋 Assignment details:', { orderId, partnerEmail, orderData });
+      
+      // First, try to find partner by email in localStorage
+      const registeredPartners = JSON.parse(localStorage.getItem('registered_partners') || '[]');
+      const managerPartners = JSON.parse(localStorage.getItem('manager_partners') || '[]');
+      const allPartners = [...registeredPartners, ...managerPartners];
+      
+      const partner = allPartners.find(p => p.email === partnerEmail);
+      
+      if (!partner) {
+        throw new Error(`Partner with email ${partnerEmail} not found`);
+      }
+      
+      console.log('✅ Partner found by email:', partner.name, partner.email);
+      
+      // Try backend assignment first
+      try {
+        const backendResponse = await orderService.assignPartnerToOrder(orderId, partner._id, partnerEmail);
+        if (backendResponse.success) {
+          console.log('✅ Order assigned via backend API');
+          return backendResponse;
+        }
+      } catch (backendError) {
+        console.log('⚠️ Backend assignment failed, using localStorage fallback');
+      }
+      
+      // Fallback to localStorage assignment
+      const globalOrders = JSON.parse(localStorage.getItem('global_orders') || '[]');
+      const orderIndex = globalOrders.findIndex(order => order._id === orderId);
+      
+      if (orderIndex === -1) {
+        throw new Error('Order not found');
+      }
+      
+      // Update order with partner assignment
+      globalOrders[orderIndex] = {
+        ...globalOrders[orderIndex],
+        assignedPartner: partner._id,
+        assignedPartnerName: partner.name,
+        assignedPartnerEmail: partner.email,
+        assignedAt: new Date().toISOString(),
+        status: 'PREP'
+      };
+      
+      // Update partner status
+      const updatedPartners = allPartners.map(p => 
+        p.email === partnerEmail 
+          ? { ...p, status: 'busy', currentOrder: orderId }
+          : p
+      );
+      
+      // Save updates
+      localStorage.setItem('global_orders', JSON.stringify(globalOrders));
+      localStorage.setItem('registered_partners', JSON.stringify(updatedPartners.filter(p => registeredPartners.some(rp => rp._id === p._id))));
+      localStorage.setItem('manager_partners', JSON.stringify(updatedPartners.filter(p => managerPartners.some(mp => mp._id === p._id))));
+      
+      // Emit real-time assignment event
+      const assignmentData = {
+        orderId,
+        orderNumber: globalOrders[orderIndex].orderId,
+        partnerId: partner._id,
+        partnerName: partner.name,
+        partnerEmail: partner.email,
+        customerName: globalOrders[orderIndex].customerName,
+        customerPhone: globalOrders[orderIndex].customerPhone,
+        customerAddress: globalOrders[orderIndex].customerAddress,
+        totalAmount: globalOrders[orderIndex].totalAmount,
+        items: globalOrders[orderIndex].items,
+        specialInstructions: globalOrders[orderIndex].specialInstructions,
+        estimatedDeliveryTime: globalOrders[orderIndex].estimatedDeliveryTime,
+        priority: globalOrders[orderIndex].priority,
+        assignedAt: globalOrders[orderIndex].assignedAt,
+        source: 'localStorage'
+      };
+      
+      // Emit event for partner dashboard
+      window.dispatchEvent(new CustomEvent('partner-order-assigned', {
+        detail: assignmentData
+      }));
+      
+      console.log('✅ Order assigned via localStorage with email identification');
+      
+      return {
+        success: true,
+        data: {
+          order: globalOrders[orderIndex],
+          partner: partner
+        }
+      };
+      
+    } catch (error) {
+      console.error('❌ Email-based order assignment failed:', error);
+      throw error;
+    }
+  },
+
+  // Real-time partner notification system
+  notifyPartnerOrderAssignment: (partnerEmail, orderData) => {
+    console.log('📧 Sending real-time notification to partner:', partnerEmail);
+    
+    // Emit custom event for partner dashboard
+    window.dispatchEvent(new CustomEvent('partner-order-notification', {
+      detail: {
+        partnerEmail,
+        type: 'order_assigned',
+        orderData,
+        timestamp: new Date()
+      }
+    }));
+    
+    // Also emit Socket.IO event if available
+    if (window.socket) {
+      window.socket.emit('notify_partner_by_email', {
+        partnerEmail,
+        type: 'order_assigned',
+        orderData,
+        timestamp: new Date()
+      });
+    }
+    
+    console.log('📡 Real-time notification sent to partner:', partnerEmail);
+  },
+
+  // Get available orders for partners
+  getAvailableOrders: async () => {
+    try {
+      console.log('📋 Fetching available orders for partner...');
+      const response = await api.get('/orders/available');
+      console.log('✅ Available orders fetched:', response.data.data?.length || 0);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error fetching available orders:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch available orders');
+    }
+  },
+
+  // Get partner's current order
+  getCurrentOrder: async () => {
+    try {
+      console.log('📋 Fetching current order for partner...');
+      const response = await api.get('/orders/current');
+      console.log('✅ Current order fetched');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error fetching current order:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch current order');
+    }
+  },
+
+  // Get partner's order history
+  getPartnerOrderHistory: async () => {
+    try {
+      console.log('📋 Fetching partner order history...');
+      const response = await api.get('/orders/partner/history');
+      console.log('✅ Partner order history fetched:', response.data.data?.orders?.length || 0);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error fetching partner order history:', error);
+      throw new Error(error.response?.data?.message || 'Failed to fetch order history');
+    }
+  },
+
+  // Assign partner to order (Manager function)
+  assignPartnerToOrder: async (orderId, partnerId, partnerEmail = null) => {
+    try {
+      console.log('👥 Assigning partner to order via backend API...');
+      console.log('📋 Assignment details:', { orderId, partnerId, partnerEmail });
+      
+      const response = await api.patch(`/orders/${orderId}/assign`, {
+        partnerId,
+        partnerEmail
+      });
+      
+      console.log('✅ Partner assigned successfully via backend API');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error assigning partner via backend API:', error);
+      throw new Error(error.response?.data?.message || 'Failed to assign partner');
+    }
+  },
+
+  // Update order status via backend only
+  updateOrderStatusBackend: async (orderId, newStatus) => {
+    try {
+      console.log(`🔄 Updating order ${orderId} status to ${newStatus} via backend...`);
+      
+      const response = await api.patch(`/orders/${orderId}/status`, {
+        status: newStatus
+      });
+      
+      console.log('✅ Order status updated successfully via backend');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error updating order status via backend:', error);
+      throw new Error(error.response?.data?.message || 'Failed to update order status');
     }
   }
 };

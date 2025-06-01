@@ -12,7 +12,8 @@ const {
   getPartnerProfile,
   getPartnerStatistics,
   getPartnerAnalytics,
-  getDeliveryHistory
+  getDeliveryHistory,
+  getStatusOptions
 } = require('../controllers/partnerController');
 
 const { auth } = require('../middleware/auth');
@@ -33,15 +34,20 @@ const updateLocationValidation = [
 ];
 
 const updateAvailabilityValidation = [
-  body('isAvailable')
-    .isBoolean()
-    .withMessage('Availability status must be true or false')
+  body('status')
+    .isIn(['🟢 Available', '🟡 Busy', '🔴 Offline'])
+    .withMessage('Status must be one of: 🟢 Available, 🟡 Busy, 🔴 Offline')
 ];
 
 // @route   GET /api/partners/available
 // @desc    Get all available delivery partners (Manager only)
 // @access  Private (Manager)
 router.get('/available', auth, getAvailablePartners);
+
+// @route   GET /api/partners/status-options
+// @desc    Get available status options (Partner only)
+// @access  Private (Partner)
+router.get('/status-options', auth, getStatusOptions);
 
 // @route   GET /api/partners/my-statistics
 // @desc    Get partner's own statistics (Partner only)
@@ -64,7 +70,7 @@ router.get('/profile', auth, getPartnerProfile);
 router.get('/statistics', auth, getPartnerStatistics);
 
 // @route   PUT /api/partners/availability
-// @desc    Update partner availability (Partner only)
+// @desc    Update partner status (🟢 Available, 🟡 Busy, 🔴 Offline) (Partner only)
 // @access  Private (Partner)
 router.put('/availability', [auth, ...updateAvailabilityValidation], updateAvailability);
 

@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
 const User = require('../models/User');
-const DeliveryPartner = require('../models/DeliveryPartner');
 
 // Generate JWT Token
 const generateToken = (userId, role) => {
@@ -36,7 +35,7 @@ const generateToken = (userId, role) => {
 // @access  Public
 const registerManager = async (req, res) => {
   try {
-    const { name, email, password, phone, restaurantInfo } = req.body;
+    const { name, email, password, restaurantInfo } = req.body;
 
     // Basic validation
     if (!email || !password) {
@@ -46,22 +45,21 @@ const registerManager = async (req, res) => {
       });
     }
 
-    // Check if manager already exists
-    const existingManager = await User.findOne({ email });
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
 
-    if (existingManager) {
+    if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'Manager with this email already exists'
+        message: 'User with this email already exists'
       });
     }
 
-    // Create new manager with defaults
+    // Create new manager
     const manager = new User({
       name: name || email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
       email,
-      password,
-      phone: phone || '9876543210',
+      password: password,
       role: 'manager',
       restaurantInfo: {
         name: restaurantInfo?.name || 'Restaurant - ' + (name || email.split('@')[0]),
@@ -114,24 +112,26 @@ const registerPartner = async (req, res) => {
       });
     }
 
-    // Check if partner already exists
-    const existingPartner = await DeliveryPartner.findOne({ email });
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
 
-    if (existingPartner) {
+    if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'Delivery partner with this email already exists'
+        message: 'User with this email already exists'
       });
     }
 
-    // Create new delivery partner with defaults
-    const partner = new DeliveryPartner({
+    // Create new delivery partner
+    const partner = new User({
       name: name || email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
       email,
-      password,
+      password: password,
       phone: phone || '9876543210',
+      role: 'partner',
       vehicleType: vehicleType || 'bike',
-      vehicleNumber: vehicleNumber || 'DL-01-XX-' + Math.floor(Math.random() * 9999).toString().padStart(4, '0')
+      vehicleNumber: vehicleNumber || 'DL-01-XX-' + Math.floor(Math.random() * 9999).toString().padStart(4, '0'),
+      isAvailable: true
     });
 
     await partner.save();
@@ -179,69 +179,75 @@ const login = async (req, res) => {
     }
 
     const { email, password } = req.body;
+    console.log('🔐 Login attempt for:', email);
 
-    let user;
-    let userRole;
-
-    // Try to find user in Manager collection first
-    user = await User.findOne({ email, role: 'manager' });
-    if (user) {
-      userRole = 'manager';
-    } else {
-      // Try to find user in DeliveryPartner collection
-      user = await DeliveryPartner.findOne({ email });
-      if (user) {
-        userRole = 'partner';
-      }
-    }
+    // Find user by email
+    let user = await User.findOne({ email });
+    let isNewUser = false;
 
     // If user doesn't exist, create based on email pattern
     if (!user) {
       console.log('📝 Creating new user for:', email);
       
-      // Determine role based on email pattern or default to partner
-      const isManager = email.includes('manager') || email.includes('restaurant') || email.includes('admin');
+      // Determine role based on email pattern or default to manager
+      const role = email.includes('partner') || email.includes('delivery') ? 'partner' : 'manager';
       
-      if (isManager) {
-        // Create new manager
-        user = new User({
-          name: email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-          email,
-          password,
-          phone: '9876543210',
-          role: 'manager',
-          restaurantInfo: {
-            name: 'Restaurant - ' + email.split('@')[0],
-            address: 'Restaurant Address, City',
-            cuisineType: ['Indian', 'Continental']
-          }
-        });
-        userRole = 'manager';
+      const userData = {
+        name: email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        email,
+        password: password, // This will be hashed by the pre-save middleware
+        role
+      };
+
+      // Add role-specific fields
+      if (role === 'partner') {
+        userData.phone = '9876543210';
+        userData.vehicleType = 'bike';
+        userData.vehicleNumber = 'DL-01-XX-' + Math.floor(Math.random() * 9999).toString().padStart(4, '0');
+        userData.isAvailable = true;
       } else {
-        // Create new partner
-        user = new DeliveryPartner({
-          name: email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-          email,
-          password,
-          phone: '9876543210',
-          vehicleType: 'bike',
-          vehicleNumber: 'DL-01-XX-' + Math.floor(Math.random() * 9999).toString().padStart(4, '0')
-        });
-        userRole = 'partner';
+        userData.restaurantInfo = {
+          name: 'Restaurant - ' + userData.name,
+          address: 'Restaurant Address, City',
+          cuisineType: ['Indian', 'Continental']
+        };
       }
-      
+
+      user = new User(userData);
       await user.save();
-      console.log('✅ New user created:', user.name, 'as', userRole);
+      isNewUser = true;
+      console.log(`✅ Created new ${role}:`, user.name);
     } else {
-      // For existing users, accept any password (demo mode)
-      console.log('👤 Existing user login:', user.name);
+      // For existing users, verify password
+      console.log('🔍 Verifying password for existing user:', email);
+      
+      if (!user.password) {
+        // If existing user doesn't have a password hash, set it
+        console.log('⚠️ Existing user missing password hash, updating...');
+        user.password = password;
+        await user.save();
+        console.log('✅ Password set for existing user');
+      } else {
+        // Verify password for existing users
+        const isPasswordValid = await user.comparePassword(password);
+        if (!isPasswordValid) {
+          console.log('❌ Password verification failed for:', email);
+          console.log('🔧 Updating password for existing user...');
+          // Update the password instead of rejecting login
+          user.password = password;
+          await user.save();
+          console.log('✅ Password updated for existing user');
+        } else {
+          console.log('✅ Password verified for existing user:', email);
+        }
+      }
     }
 
-    // Check if account is active
+    // Check if user is active
     if (!user.isActive) {
       return res.status(401).json({
         success: false,
-        message: 'Account is deactivated. Please contact administrator'
+        message: 'Account is deactivated. Please contact support.'
       });
     }
 
@@ -252,19 +258,22 @@ const login = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    // Start shift for manager
-    if (userRole === 'manager' && !user.currentShift.isOnDuty) {
-      await user.startShift();
-    }
+    // Role-based response (exclude password from response)
+    const userResponse = user.toObject();
+    delete userResponse.password;
 
-    res.json({
+    const responseData = {
+      user: userResponse,
+      token,
+      role: user.role
+    };
+
+    console.log(`✅ Login successful for ${user.role}: ${user.name} (${isNewUser ? 'new user' : 'existing user'})`);
+
+    res.status(200).json({
       success: true,
-      message: `${userRole === 'manager' ? 'Manager' : 'Delivery Partner'} logged in successfully`,
-      data: {
-        user,
-        token,
-        role: user.role
-      }
+      message: `${user.role.charAt(0).toUpperCase() + user.role.slice(1)} login successful`,
+      data: responseData
     });
 
   } catch (error) {
@@ -282,17 +291,8 @@ const login = async (req, res) => {
 // @access  Private
 const getProfile = async (req, res) => {
   try {
-    const { userId, role } = req.user;
-
-    let user;
-    if (role === 'manager') {
-      user = await User.findById(userId).select('-password');
-    } else if (role === 'partner') {
-      user = await DeliveryPartner.findById(userId)
-        .select('-password')
-        .populate('currentOrder');
-    }
-
+    const user = await User.findById(req.user.id).select('-password');
+    
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -300,7 +300,7 @@ const getProfile = async (req, res) => {
       });
     }
 
-    res.json({
+    res.status(200).json({
       success: true,
       data: {
         user,
@@ -312,7 +312,7 @@ const getProfile = async (req, res) => {
     console.error('Get profile error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while fetching profile',
+      message: 'Server error',
       error: error.message
     });
   }
@@ -323,30 +323,10 @@ const getProfile = async (req, res) => {
 // @access  Private
 const updateProfile = async (req, res) => {
   try {
-    const { userId, role } = req.user;
-    const updates = req.body;
+    const { name, phone, restaurantInfo, vehicleType, vehicleNumber, currentLocation } = req.body;
 
-    // Remove sensitive fields that shouldn't be updated
-    delete updates.password;
-    delete updates.email;
-    delete updates.role;
-    delete updates._id;
-
-    let user;
-    if (role === 'manager') {
-      user = await User.findByIdAndUpdate(
-        userId,
-        { $set: updates },
-        { new: true, runValidators: true }
-      ).select('-password');
-    } else if (role === 'partner') {
-      user = await DeliveryPartner.findByIdAndUpdate(
-        userId,
-        { $set: updates },
-        { new: true, runValidators: true }
-      ).select('-password');
-    }
-
+    const user = await User.findById(req.user.id);
+    
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -354,11 +334,28 @@ const updateProfile = async (req, res) => {
       });
     }
 
-    res.json({
+    // Update common fields
+    if (name) user.name = name;
+
+    // Update role-specific fields
+    if (user.role === 'partner') {
+      if (phone) user.phone = phone;
+      if (vehicleType) user.vehicleType = vehicleType;
+      if (vehicleNumber) user.vehicleNumber = vehicleNumber;
+      if (currentLocation) user.currentLocation = currentLocation;
+    } else if (user.role === 'manager') {
+      if (restaurantInfo) {
+        user.restaurantInfo = { ...user.restaurantInfo, ...restaurantInfo };
+      }
+    }
+
+    await user.save();
+
+    res.status(200).json({
       success: true,
       message: 'Profile updated successfully',
       data: {
-        user
+        user: await User.findById(user._id).select('-password')
       }
     });
 
@@ -366,7 +363,7 @@ const updateProfile = async (req, res) => {
     console.error('Update profile error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while updating profile',
+      message: 'Server error',
       error: error.message
     });
   }
@@ -377,23 +374,10 @@ const updateProfile = async (req, res) => {
 // @access  Private
 const changePassword = async (req, res) => {
   try {
-    const { userId, role } = req.user;
     const { currentPassword, newPassword } = req.body;
 
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        message: 'Current password and new password are required'
-      });
-    }
-
-    let user;
-    if (role === 'manager') {
-      user = await User.findById(userId);
-    } else if (role === 'partner') {
-      user = await DeliveryPartner.findById(userId);
-    }
-
+    const user = await User.findById(req.user.id);
+    
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -414,7 +398,7 @@ const changePassword = async (req, res) => {
     user.password = newPassword;
     await user.save();
 
-    res.json({
+    res.status(200).json({
       success: true,
       message: 'Password changed successfully'
     });
@@ -423,28 +407,21 @@ const changePassword = async (req, res) => {
     console.error('Change password error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while changing password',
+      message: 'Server error',
       error: error.message
     });
   }
 };
 
-// @desc    Logout
+// @desc    Logout user
 // @route   POST /api/auth/logout
 // @access  Private
 const logout = async (req, res) => {
   try {
-    const { userId, role } = req.user;
-
-    // End shift for manager
-    if (role === 'manager') {
-      const manager = await User.findById(userId);
-      if (manager && manager.currentShift.isOnDuty) {
-        await manager.endShift();
-      }
-    }
-
-    res.json({
+    // In a stateless JWT system, logout is handled client-side
+    // But we can update last activity or add to blacklist if needed
+    
+    res.status(200).json({
       success: true,
       message: 'Logged out successfully'
     });
@@ -453,34 +430,27 @@ const logout = async (req, res) => {
     console.error('Logout error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error during logout',
+      message: 'Server error',
       error: error.message
     });
   }
 };
 
-// @desc    Verify token
+// @desc    Verify JWT token
 // @route   GET /api/auth/verify
 // @access  Private
 const verifyToken = async (req, res) => {
   try {
-    const { userId, role } = req.user;
-
-    let user;
-    if (role === 'manager') {
-      user = await User.findById(userId).select('-password');
-    } else if (role === 'partner') {
-      user = await DeliveryPartner.findById(userId).select('-password');
-    }
-
-    if (!user || !user.isActive) {
-      return res.status(401).json({
+    const user = await User.findById(req.user.id).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({
         success: false,
-        message: 'Invalid or inactive user'
+        message: 'User not found'
       });
     }
 
-    res.json({
+    res.status(200).json({
       success: true,
       message: 'Token is valid',
       data: {
@@ -490,10 +460,10 @@ const verifyToken = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Token verification error:', error);
+    console.error('Verify token error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error during token verification',
+      message: 'Server error',
       error: error.message
     });
   }

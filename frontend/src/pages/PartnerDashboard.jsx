@@ -25,7 +25,8 @@ import {
   FireIcon,
   ShieldCheckIcon,
   EyeIcon,
-  HomeIcon
+  HomeIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -39,10 +40,11 @@ import Counter, { CurrencyCounter, PercentageCounter } from '../components/ui/Co
 import Loading from '../components/ui/Loading';
 import { fadeInUp, staggerContainer, staggerItem, slideInRight, scaleIn } from '../utils/animations';
 import { cn } from '../utils/cn';
+import io from 'socket.io-client';
 
 const PartnerDashboard = () => {
   const { user, updatePartnerStatus } = useAuth();
-  const { socket, connected } = useSocket();
+  const { socket, connected, emitPartnerStatusUpdate, emitOrderStatusUpdate } = useSocket();
   
   // State management
   const [partnerStatus, setPartnerStatus] = useState(user?.status || 'offline');
@@ -58,11 +60,25 @@ const PartnerDashboard = () => {
     averageDeliveryTime: 0,
     weeklyEarnings: []
   });
+  const [todayStats, setTodayStats] = useState({
+    deliveries: 0,
+    earnings: 0,
+    rating: 5.0,
+    onlineTime: 0
+  });
+  const [totalStats, setTotalStats] = useState({
+    totalDeliveries: 0,
+    totalEarnings: 0,
+    averageRating: 5.0,
+    totalOnlineTime: 0
+  });
   const [availableOrders, setAvailableOrders] = useState([]);
   const [recentDeliveries, setRecentDeliveries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [location, setLocation] = useState({ lat: null, lng: null });
+  const [realtimeSocket, setRealtimeSocket] = useState(null);
+  const [orderHistory, setOrderHistory] = useState([]);
 
   // Initialize partner status from user data on component mount
   useEffect(() => {
@@ -114,261 +130,299 @@ const PartnerDashboard = () => {
     }
   }, [user]);
 
-  // Location tracking functions
-  const startLocationTracking = useCallback(() => {
-    if (navigator.geolocation) {
-      console.log('📍 Starting location tracking...');
-      
-      // Get initial location
-      getCurrentLocation();
-      
-      // Set up periodic location updates (every 30 seconds)
-      const locationInterval = setInterval(() => {
-        getCurrentLocation();
-      }, 30000);
-      
-      // Store interval ID for cleanup
-      window.locationInterval = locationInterval;
-    } else {
-      console.warn('⚠️ Geolocation is not supported by this browser');
-      toast.error('Location tracking not supported');
-    }
-  }, []);
+  // Initialize Socket.IO connection
+  useEffect(() => {
+    if (user && user.role === 'partner') {
+      const newSocket = io(process.env.REACT_APP_API_URL || 'http://localhost:5000', {
+        auth: {
+          token: localStorage.getItem('token')
+        }
+      });
 
-  const stopLocationTracking = useCallback(() => {
-    console.log('🛑 Stopping location tracking...');
-    if (window.locationInterval) {
-      clearInterval(window.locationInterval);
-      delete window.locationInterval;
-    }
-  }, []);
+      // Join partner rooms (both user ID and email-based)
+      newSocket.emit('join_room', {
+        role: 'partner',
+        userId: user._id || user.id,
+        userEmail: user.email
+      });
 
-  // Load dashboard data
+      setRealtimeSocket(newSocket);
+
+      // Listen for order assignments specifically for this partner
+      newSocket.on('order-assigned', (data) => {
+        console.log('📦 Order assignment received via Socket.IO:', data);
+        
+        // Verify this assignment is for current partner
+        if (data.partner && (
+          data.partner.email === user.email ||
+          data.partner.id === (user._id || user.id)
+        )) {
+          console.log('✅ Order assigned to current partner via Socket.IO');
+          handleOrderAssignedToCurrentPartner(data.order, data);
+        } else {
+          console.log('ℹ️ Order assigned to different partner');
+        }
+      });
+
+      // Listen for order status confirmations
+      newSocket.on('status-update-confirmed', (data) => {
+        console.log('✅ Status update confirmed:', data);
+        if (data.completedOrder) {
+          setCurrentOrder(null);
+          setPartnerStatus('available');
+          toast.success(`Order ${data.orderNumber} completed! Earned ₹${data.earnings}`, {
+            duration: 5000,
+            icon: '💰'
+          });
+        } else {
+          setCurrentOrder(prev => prev ? { ...prev, status: data.newStatus } : null);
+          toast.success(`Order status updated to ${data.newStatus}`);
+        }
+      });
+
+      // Listen for delivery completion
+      newSocket.on('delivery-completed', (data) => {
+        console.log('🎉 Delivery completed:', data);
+        setCurrentOrder(null);
+        setPartnerStatus('available');
+        toast.success(`Delivery completed! You're now available for new orders.`, {
+          duration: 5000,
+          icon: '🎉'
+        });
+      });
+
+      // Listen for new orders available
+      newSocket.on('new_order_available', (data) => {
+        console.log('📢 New order available:', data);
+        toast.success(`🔔 New order available: ${data.orderId}`, {
+          duration: 3000,
+          position: 'top-right'
+        });
+        // Refresh available orders
+        loadDashboardData();
+      });
+
+      console.log('🔌 Partner Socket.IO connected for real-time updates');
+
+      return () => {
+        newSocket.disconnect();
+      };
+    }
+  }, [user, partnerStatus, currentOrder]);
+
+  // Enhanced function to handle order assignment to current partner
+  const handleOrderAssignedToCurrentPartner = (orderData, assignmentData) => {
+    console.log('🎯 Processing order assignment for current partner:', user.email);
+    console.log('📦 Order data:', orderData);
+    console.log('📋 Assignment data:', assignmentData);
+      
+      // Create complete order object with all necessary data
+      const assignedOrder = {
+      _id: orderData._id || orderData.orderId,
+      orderId: orderData.orderId || orderData.orderNumber,
+        customerName: orderData.customerName,
+        customerEmail: orderData.customerEmail || 'Not provided',
+        customerPhone: orderData.customerPhone,
+        customerAddress: orderData.customerAddress,
+        totalAmount: orderData.totalAmount,
+        items: orderData.items || [],
+        specialInstructions: orderData.specialInstructions || '',
+        estimatedDeliveryTime: orderData.estimatedDeliveryTime || 30,
+      status: orderData.status || 'PREP',
+      assignedAt: orderData.assignedAt || assignmentData.assignedAt || new Date().toISOString(),
+      assignedBy: assignmentData.assignedBy || assignmentData.managerName || 'Manager',
+      priority: orderData.priority || 'medium',
+      assignedPartnerEmail: user.email
+      };
+      
+      console.log('📦 Setting current order in dashboard:', assignedOrder);
+      
+      // Set as current order immediately
+      setCurrentOrder(assignedOrder);
+      console.log('✅ Current order set:', assignedOrder.orderId);
+      
+      // Update partner status to busy
+      setPartnerStatus('busy');
+      
+      // Update auth context with current order
+      updatePartnerStatus('busy', assignedOrder._id);
+      
+      // Store in localStorage for persistence
+      localStorage.setItem('current_order', JSON.stringify(assignedOrder));
+      
+      // Update auth data to include current order
+      const storedAuth = JSON.parse(localStorage.getItem('zomato_auth') || '{}');
+      if (storedAuth.user) {
+      storedAuth.user.orderStatus = assignedOrder.status;
+        storedAuth.user.currentOrder = assignedOrder._id;
+        storedAuth.user.status = 'busy';
+        localStorage.setItem('zomato_auth', JSON.stringify(storedAuth));
+        console.log('✅ Auth data updated with current order');
+      }
+      
+      // Update partner status in registered partners
+      const allPartners = JSON.parse(localStorage.getItem('registered_partners') || '[]');
+      const updatedPartners = allPartners.map(partner => 
+      partner.email === user.email || partner._id === (user._id || user.id)
+          ? { ...partner, status: 'busy', currentOrder: assignedOrder._id }
+          : partner
+      );
+      localStorage.setItem('registered_partners', JSON.stringify(updatedPartners));
+      
+      // Show detailed assignment notification with complete customer info
+      toast.success(
+        <div className="space-y-2">
+          <div className="font-bold">🚚 Order Assigned to You!</div>
+          <div className="text-sm">
+          <div>📦 Order: #{assignedOrder.orderId}</div>
+          <div>👤 Customer: {assignedOrder.customerName}</div>
+          <div>📧 Email: {assignedOrder.customerEmail}</div>
+          <div>📞 Phone: {assignedOrder.customerPhone}</div>
+          <div>💰 Amount: ₹{assignedOrder.totalAmount}</div>
+          <div className="text-blue-600">Assigned by: {assignedOrder.assignedBy}</div>
+          </div>
+        </div>,
+        {
+          duration: 8000,
+          position: 'top-center'
+        }
+      );
+      
+      console.log('✅ Order assignment completed in dashboard:', {
+        orderId: assignedOrder._id,
+        orderNumber: assignedOrder.orderId,
+      partnerEmail: user.email,
+        partnerStatus: 'busy',
+        currentOrderSet: true
+      });
+      
+      // Refresh dashboard data to ensure everything is in sync
+      setTimeout(() => {
+        console.log('🔄 Refreshing dashboard after order assignment...');
+        loadDashboardData();
+      }, 1000);
+    };
+    
+  // Load initial data and set up real-time updates
   useEffect(() => {
     loadDashboardData();
     startLocationTracking();
     
-    // Set up global functions for socket events
-    window.refreshAvailableOrders = () => {
-      console.log('🔄 Refreshing available orders from socket event...');
+    // Set up real-time updates every 30 seconds for available orders
+    const interval = setInterval(() => {
+      console.log('🔄 Auto-refreshing available orders...');
+      loadDashboardData();
+    }, 30000);
+    
+    // Real-time event listeners for order updates
+    const handleOrderCompleted = (event) => {
+      console.log('✅ Order completed event received, refreshing available orders...');
       loadDashboardData();
     };
-    
-    window.removeFromAvailableOrders = (orderId) => {
-      console.log('🗑️ Removing order from available list:', orderId);
-      setAvailableOrders(prev => prev.filter(order => order._id !== orderId));
-    };
-    
-    window.showNotification = (data) => {
-      toast(data.message, {
-        icon: data.type === 'success' ? '✅' : data.type === 'error' ? '❌' : 'ℹ️',
-        duration: 4000
-      });
-    };
-    
-    // Listen for order completion events
-    const handleOrderCompleted = (event) => {
-      const { newStats, totalStats, completionBonus } = event.detail;
-      console.log('🎉 Order completed event received, updating dashboard...', newStats);
-      
-      // Refresh dashboard data to show updated statistics
-      setTimeout(() => {
-        loadDashboardData();
-        toast.success(`📈 Statistics updated! +₹${completionBonus}`, {
-          duration: 3000
-        });
-      }, 500);
-    };
-    
-    // Listen for new orders created by managers
+
     const handleNewOrderCreated = (event) => {
-      const { order } = event.detail;
-      console.log('🆕 New order received from manager:', order.orderId, 'Partner status:', partnerStatus);
+      console.log('📦 New order created event received, refreshing available orders...');
+      loadDashboardData();
+      toast.success('📦 New order available!', { duration: 3000 });
+    };
+
+    const handleOrderAssignedToMe = (event) => {
+      console.log('🎯 Order assigned to me event received:', event.detail);
+      const orderData = event.detail;
       
-      // Only add to available orders if partner is available and order is not already assigned
-      if (partnerStatus === 'available' && !order.assignedPartner) {
-        setAvailableOrders(prev => {
-          // Check if order already exists to avoid duplicates
-          const orderExists = prev.some(existingOrder => existingOrder._id === order._id);
-          if (!orderExists) {
-            const newOrders = [order, ...prev];
-            console.log('✅ Order added to available list for partner:', user.name, 'Order ID:', order.orderId, 'Total available orders:', newOrders.length);
-            
-            toast.success(`🔔 New order available: ${order.orderId}`, {
-              icon: '🆕',
-              duration: 5000,
-              style: {
-                background: '#f0f9ff',
-                border: '1px solid #0ea5e9',
-                color: '#0369a1'
-              }
-            });
-            
-            return newOrders;
-          } else {
-            console.log('ℹ️ Order already exists in available list:', order.orderId);
-            return prev;
-          }
-        });
-      } else {
-        console.log('ℹ️ Partner not available or order already assigned:', { 
-          partnerStatus, 
-          partnerName: user.name,
-          orderAssigned: !!order.assignedPartner 
-        });
+      if (orderData && (orderData.assignedPartnerEmail === user.email || orderData.partnerEmail === user.email)) {
+        handleOrderAssignedToCurrentPartner(orderData, event.detail);
+        loadDashboardData(); // Refresh to remove from available orders
       }
     };
-    
-    // Listen for orders accepted by other partners
-    const handleOrderAccepted = (event) => {
-      const { orderId, partnerName, partnerId } = event.detail;
-      
-      // Only process if it's not this partner who accepted the order
-      if (partnerId !== (user._id || user.id)) {
-        console.log(`📦 Order ${orderId} accepted by ${partnerName}, removing from available list for partner: ${user.name}`);
-        
-        // Remove order from available orders list immediately
-        setAvailableOrders(prev => {
-          const filteredOrders = prev.filter(order => order._id !== orderId);
-          console.log('🗑️ Order removed from available list. Remaining orders:', filteredOrders.length);
-          return filteredOrders;
-        });
-        
-        toast.info(`📦 Order ${orderId} accepted by ${partnerName}`, {
-          icon: 'ℹ️',
-          duration: 3000
-        });
-      } else {
-        console.log('ℹ️ Ignoring orderAccepted event from self:', partnerName);
-      }
-    };
-    
-    // Listen for order status changes and cancellations
-    const handleOrderStatusChanged = (event) => {
-      const { orderId, newStatus, partnerId } = event.detail;
-      
-      // If order is cancelled or returned to PREP status, add it back to available orders
-      if (newStatus === 'PREP' && partnerId !== (user._id || user.id)) {
-        console.log(`🔄 Order ${orderId} returned to PREP status, checking if should be available for partner: ${user.name}`);
-        
-        // Reload available orders to include the returned order
-        setTimeout(() => {
+
+    const handlePartnerOrderAssigned = (event) => {
+      console.log('👥 Partner order assigned event received:', event.detail);
+      // Refresh available orders as one order was assigned
           loadDashboardData();
-        }, 500);
+    };
+
+    const handlePartnerOrderNotification = (event) => {
+      console.log('🔔 Partner order notification received:', event.detail);
+      const data = event.detail;
+      
+      if (data.partnerEmail === user.email || data.assignedPartnerEmail === user.email) {
+        toast.success(`📦 New order assigned: ${data.orderNumber}`, { duration: 5000 });
+        loadDashboardData();
       }
     };
-    
+
+    const handleOrderNoLongerAvailable = (event) => {
+      console.log('❌ Order no longer available:', event.detail);
+      // Refresh available orders to remove assigned/completed orders
+      loadDashboardData();
+    };
+
+    const handleOrderStatusChanged = (event) => {
+      console.log('🔄 Order status changed:', event.detail);
+      // Refresh available orders as status changes might affect availability
+      loadDashboardData();
+    };
+
+    const handleOrderAccepted = (event) => {
+      console.log('✅ Order accepted by partner:', event.detail);
+      // Refresh available orders to remove accepted order
+      loadDashboardData();
+    };
+
+    const handleStorageChange = (event) => {
+      if (event.key === 'global_orders' || event.key === 'completed_orders') {
+        console.log('💾 Storage change detected for orders, refreshing...');
+        setTimeout(() => loadDashboardData(), 500); // Small delay to ensure storage is updated
+      }
+    };
+
+    // Add event listeners
     window.addEventListener('orderCompleted', handleOrderCompleted);
     window.addEventListener('newOrderCreated', handleNewOrderCreated);
-    window.addEventListener('orderAccepted', handleOrderAccepted);
+    window.addEventListener('orderAssignedToMe', handleOrderAssignedToMe);
+    window.addEventListener('partnerOrderAssigned', handlePartnerOrderAssigned);
+    window.addEventListener('partnerOrderNotification', handlePartnerOrderNotification);
+    window.addEventListener('orderNoLongerAvailable', handleOrderNoLongerAvailable);
     window.addEventListener('orderStatusChanged', handleOrderStatusChanged);
-    
-    // Listen for localStorage changes from other tabs/windows
-    const handleStorageChange = (event) => {
-      if (event.key === 'global_orders') {
-        console.log('🔄 Global orders updated in another tab, refreshing available orders...');
-        // Small delay to ensure the storage is fully updated
-        setTimeout(() => {
-          loadDashboardData();
-        }, 200);
-      }
-    };
-    
+    window.addEventListener('orderAccepted', handleOrderAccepted);
     window.addEventListener('storage', handleStorageChange);
     
-    // Cleanup on unmount
+    // Cleanup
     return () => {
-      delete window.refreshAvailableOrders;
-      delete window.removeFromAvailableOrders;
-      delete window.showNotification;
+      clearInterval(interval);
       window.removeEventListener('orderCompleted', handleOrderCompleted);
       window.removeEventListener('newOrderCreated', handleNewOrderCreated);
-      window.removeEventListener('orderAccepted', handleOrderAccepted);
+      window.removeEventListener('orderAssignedToMe', handleOrderAssignedToMe);
+      window.removeEventListener('partnerOrderAssigned', handlePartnerOrderAssigned);
+      window.removeEventListener('partnerOrderNotification', handlePartnerOrderNotification);
+      window.removeEventListener('orderNoLongerAvailable', handleOrderNoLongerAvailable);
       window.removeEventListener('orderStatusChanged', handleOrderStatusChanged);
+      window.removeEventListener('orderAccepted', handleOrderAccepted);
       window.removeEventListener('storage', handleStorageChange);
       stopLocationTracking();
     };
-  }, [partnerStatus, user]); // Added dependencies to re-run when status or user changes
+  }, [user]);
 
-  const loadDashboardData = async () => {
-    try {
-      setLoading(true);
-      console.log('📊 Loading partner dashboard demo data...');
-      
-      // Load today's statistics from localStorage with real-time updates
-      const todayStats = JSON.parse(localStorage.getItem('partner_today_stats') || '{}');
-      const totalStats = JSON.parse(localStorage.getItem('partner_total_stats') || '{}');
-      
-      // Calculate dynamic statistics
-      const todayDeliveries = todayStats.deliveries || 8;
-      const todayEarnings = todayStats.earnings || 1200;
-      const totalDeliveries = totalStats.deliveries || 247;
-      const totalEarnings = totalStats.earnings || 28450;
-      const totalDeliveryTime = totalStats.totalDeliveryTime || 5681;
-      const avgDeliveryTime = totalDeliveries > 0 ? Math.round(totalDeliveryTime / totalDeliveries) : 23;
-      
-      // Demo statistics with real-time data
-      const demoStats = {
-        todayDeliveries,
-        totalDeliveries,
-        todayEarnings,
-        totalEarnings,
-        averageRating: 4.7,
-        completionRate: 96.5,
-        onTimeDeliveries: Math.round(totalDeliveries * 0.89),
-        averageDeliveryTime: avgDeliveryTime,
-        weeklyEarnings: [800, 950, 1100, 1200, 950, 1300, todayEarnings]
-      };
-      setStatistics(demoStats);
-      
-      // Load available orders from global storage (created by managers)
-      let availableOrdersList = [];
-      if (partnerStatus === 'available') {
-        const globalOrders = JSON.parse(localStorage.getItem('global_orders') || '[]');
-        // Filter orders that are in PREP status and not assigned to anyone
-        availableOrdersList = globalOrders.filter(order => 
-          order.status === 'PREP' && 
-          !order.assignedPartner
-        ).map(order => ({
-          ...order,
-          createdAt: new Date(order.createdAt),
-          estimatedDeliveryTime: 25
-        }));
-        
-        console.log('✅ Real available orders loaded:', availableOrdersList.length);
-      }
-      setAvailableOrders(availableOrdersList);
-      
-      // Load recent deliveries from completed orders history (real orders only)
-      const completedOrders = JSON.parse(localStorage.getItem('completed_orders') || '[]');
-      const partnerCompletedOrders = completedOrders
-        .filter(order => order.partnerId === (user._id || user.id))
-        .slice(0, 5)
-        .map(order => ({
-          _id: order._id,
-          orderId: order.orderId,
-          totalAmount: order.totalAmount,
-          deliveredAt: new Date(order.deliveredAt),
-          rating: order.rating || 5,
-          deliveryTime: order.deliveryTime || 25
-        }));
-      
-      setRecentDeliveries(partnerCompletedOrders);
+  // Location tracking functions
+  const startLocationTracking = () => {
+    console.log('📍 Starting location tracking for partner...');
+    getCurrentLocation();
+    
+    // Update location every 2 minutes
+    const locationInterval = setInterval(() => {
+      getCurrentLocation();
+    }, 120000);
+    
+    // Store interval ID for cleanup
+    window.partnerLocationInterval = locationInterval;
+  };
 
-      console.log('✅ Demo data loaded successfully with real-time stats:', {
-        todayDeliveries,
-        todayEarnings,
-        totalDeliveries,
-        totalEarnings
-      });
-      
-    } catch (error) {
-      console.error('❌ Error loading demo data:', error);
-      setAvailableOrders([]);
-      setRecentDeliveries([]);
-      toast.error('Failed to load dashboard data');
-    } finally {
-      setLoading(false);
+  const stopLocationTracking = () => {
+    console.log('📍 Stopping location tracking...');
+    if (window.partnerLocationInterval) {
+      clearInterval(window.partnerLocationInterval);
+      delete window.partnerLocationInterval;
     }
   };
 
@@ -396,7 +450,7 @@ const PartnerDashboard = () => {
 
   const handleStatusChange = async (newStatus) => {
     try {
-      setUpdatingStatus(true);
+      setUpdating(true);
       console.log('📝 Updating partner status to:', newStatus);
       
       // Update local state immediately for better UX
@@ -418,8 +472,10 @@ const PartnerDashboard = () => {
         updatePartnerStatus(newStatus, currentOrder?._id);
       }
       
-      // Simulate API call (since we're in demo mode)
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Emit real-time status update
+      if (emitPartnerStatusUpdate) {
+      emitPartnerStatusUpdate(newStatus, location);
+      }
       
       toast.success(`Status updated to ${newStatus}`, {
         icon: newStatus === 'available' ? '🟢' : newStatus === 'busy' ? '🟡' : '🔴',
@@ -432,130 +488,149 @@ const PartnerDashboard = () => {
       setPartnerStatus(user?.status || 'offline');
       toast.error('Failed to update status');
     } finally {
-      setUpdatingStatus(false);
+      setUpdating(false);
     }
   };
 
-  const handleAcceptOrder = async (orderId) => {
+  const handleUpdateOrderStatus = async (orderId, newStatus) => {
     try {
-      console.log('✅ Partner', user.name, 'accepting order:', orderId);
-      
-      // Find the order from available orders
-      const orderToAccept = availableOrders.find(order => order._id === orderId);
-      if (!orderToAccept) {
-        toast.error('Order not found or already taken');
-        return;
-      }
-      
-      // Check if order is still available in global storage (race condition protection)
-      const globalOrders = JSON.parse(localStorage.getItem('global_orders') || '[]');
-      const globalOrder = globalOrders.find(order => order._id === orderId);
-      
-      if (!globalOrder || globalOrder.assignedPartner) {
-        toast.error('This order has already been taken by another partner');
-        setAvailableOrders(prev => prev.filter(o => o._id !== orderId));
-        return;
-      }
-      
-      // Update the order in global storage IMMEDIATELY to assign it to this partner
-      const updatedGlobalOrders = globalOrders.map(order => 
-        order._id === orderId 
-          ? { 
-              ...order, 
-              assignedPartner: user._id || user.id,
-              partnerName: user.name,
-              assignedAt: new Date().toISOString(),
-              status: 'PICKED' 
-            }
-          : order
-      );
-      localStorage.setItem('global_orders', JSON.stringify(updatedGlobalOrders));
-      console.log('🔄 Global storage updated - Order assigned to:', user.name);
-      
-      // IMMEDIATELY broadcast to all other partners to remove this order
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('orderAccepted', {
-          detail: {
-            orderId: orderId,
-            partnerName: user.name,
-            partnerId: user._id || user.id
-          }
-        }));
-        console.log('📢 Broadcasted order acceptance to all partners');
-      }, 100); // Small delay to ensure localStorage is updated first
-      
-      // Update the order status to PICKED and set as current order
-      const acceptedOrder = {
-        ...orderToAccept,
-        status: 'PICKED',
-        assignedPartner: user._id || user.id,
-        partnerName: user.name,
-        assignedAt: new Date()
-      };
-      
-      // Update current order and remove from available orders
-      setCurrentOrder(acceptedOrder);
-      setAvailableOrders(prev => prev.filter(o => o._id !== orderId));
-      
-      // Update partner status to busy
-      setPartnerStatus('busy');
-      updatePartnerStatus('busy', acceptedOrder._id);
-      
-      // Store order status in localStorage for persistence
-      const storedAuth = JSON.parse(localStorage.getItem('zomato_auth') || '{}');
-      if (storedAuth.user) {
-        storedAuth.user.orderStatus = 'PICKED';
-        storedAuth.user.currentOrder = acceptedOrder._id;
-        localStorage.setItem('zomato_auth', JSON.stringify(storedAuth));
-      }
-      
-      // Show success message
-      toast.success(`Order ${acceptedOrder.orderId} accepted successfully! You are now busy.`, {
-        icon: '✅',
-        duration: 4000
-      });
-      
-      console.log('✅ Order accepted and assigned:', {
-        orderId: acceptedOrder._id,
-        orderNumber: acceptedOrder.orderId,
-        partnerStatus: 'busy',
-        partnerName: user.name,
-        broadcastSent: true
-      });
-      
-    } catch (error) {
-      console.error('❌ Error accepting order:', error);
-      toast.error(error.message || 'Failed to accept order', {
-        icon: '❌',
-        duration: 4000
-      });
-    }
-  };
+      setUpdating(true);
+      console.log(`🔄 Updating order ${orderId} status to ${newStatus}...`);
 
-  const handleUpdateOrderStatus = async (orderId, status) => {
-    try {
-      console.log('📝 Updating order status:', orderId, status);
-      const response = await partnerService.updateOrderStatus(orderId, status);
+      // Use backend API only
+      const response = await orderService.updateOrderStatusBackend(orderId, newStatus);
       
       if (response.success) {
-        setCurrentOrder(response.data);
-        toast.success(`Order status updated to ${status}`, {
-          icon: status === 'DELIVERED' ? '✅' : '📝',
-          duration: 3000
-        });
+        console.log('✅ Order status updated via backend API');
         
-        // If delivered, clear current order
-        if (status === 'DELIVERED') {
-          setCurrentOrder(null);
+        // Update local state with backend response
+        const updatedOrder = response.data;
+        setCurrentOrder(updatedOrder);
+        
+        // Emit real-time event for dashboard updates
+        window.dispatchEvent(new CustomEvent('order-updated', {
+          detail: { orderId, newStatus, source: 'backend' }
+        }));
+        
+        // If delivered, clear current order and update status
+        if (newStatus === 'DELIVERED') {
+          setTimeout(() => {
+            setCurrentOrder(null);
+            setPartnerStatus('available');
+            updatePartnerStatus('available', null);
+            toast.success(`🎉 Order delivered successfully!`);
+            loadDashboardData(); // Refresh available orders
+          }, 1500);
         }
         
-        // Refresh statistics
-        loadDashboardData();
+        toast.success(`✅ Order ${newStatus.toLowerCase()}!`);
+        
+      } else {
+        throw new Error(response.message || 'Failed to update order status');
       }
+
     } catch (error) {
       console.error('❌ Error updating order status:', error);
-      toast.error('Failed to update order status');
+      toast.error('Failed to update order status: ' + error.message);
+    } finally {
+      setUpdating(false);
     }
+  };
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      console.log('📊 Loading partner dashboard data from backend API...');
+      
+      // Get current assigned order from backend API
+      try {
+        const currentOrderResponse = await orderService.getCurrentOrder();
+        if (currentOrderResponse.success && currentOrderResponse.data) {
+          setCurrentOrder(currentOrderResponse.data);
+          setPartnerStatus('busy');
+          console.log('✅ Current order loaded from backend:', currentOrderResponse.data.orderId);
+        } else {
+          setCurrentOrder(null);
+          setPartnerStatus(user?.status || 'available');
+          console.log('ℹ️ No current order found in backend');
+        }
+      } catch (error) {
+        console.log('⚠️ Failed to load current order from backend:', error.message);
+        setCurrentOrder(null);
+        setPartnerStatus(user?.status || 'available');
+      }
+      
+      // Load available orders from backend
+      try {
+        const availableOrdersResponse = await orderService.getAvailableOrders();
+        if (availableOrdersResponse.success) {
+          const orders = availableOrdersResponse.data.map(order => ({
+            ...order,
+            formattedTime: formatTime(order.createdAt),
+            formattedAmount: formatCurrency(order.totalAmount),
+            timeAgo: getTimeAgo(order.createdAt)
+          }));
+          setAvailableOrders(orders);
+          console.log(`✅ Loaded ${orders.length} available orders from backend`);
+        }
+      } catch (error) {
+        console.log('⚠️ Failed to load available orders from backend:', error.message);
+        setAvailableOrders([]);
+      }
+      
+      // Load partner statistics from backend (if available)
+      try {
+        const statsResponse = await partnerService.getPartnerStats();
+        if (statsResponse.success) {
+          setTodayStats(statsResponse.data.today || {
+            deliveries: 0,
+            earnings: 0,
+            rating: 5.0,
+            onlineTime: 0
+          });
+          setTotalStats(statsResponse.data.total || {
+            totalDeliveries: 0,
+            totalEarnings: 0,
+            averageRating: 5.0,
+            totalOnlineTime: 0
+          });
+        }
+      } catch (error) {
+        console.log('⚠️ Failed to load stats from backend, using defaults:', error.message);
+        setTodayStats({
+          deliveries: 0,
+          earnings: 0,
+          rating: 5.0,
+          onlineTime: 0
+        });
+        setTotalStats({
+          totalDeliveries: 0,
+          totalEarnings: 0,
+          averageRating: 5.0,
+          totalOnlineTime: 0
+        });
+      }
+      
+      console.log('✅ Partner dashboard data loaded from backend API');
+      
+    } catch (error) {
+      console.error('❌ Error loading partner dashboard data:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to calculate time ago
+  const getTimeAgo = (timestamp) => {
+    const now = new Date();
+    const orderTime = new Date(timestamp);
+    const diffInMinutes = Math.floor((now - orderTime) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
+    return `${Math.floor(diffInMinutes / 1440)}d ago`;
   };
 
   const formatCurrency = (amount) => {
@@ -660,7 +735,7 @@ const PartnerDashboard = () => {
                     <motion.button
                       key={status}
                       onClick={() => handleStatusChange(status)}
-                      disabled={updatingStatus}
+                      disabled={updating}
                       className={cn(
                         "px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                         partnerStatus === status
@@ -698,7 +773,7 @@ const PartnerDashboard = () => {
                   <div className="flex-1">
                     <p className="text-sm font-medium text-blue-600 mb-1">Today's Deliveries</p>
                     <Counter 
-                      value={statistics.todayDeliveries} 
+                      value={todayStats.deliveries || 0} 
                       className="text-3xl font-bold text-blue-900"
                     />
                     <div className="flex items-center mt-2">
@@ -726,7 +801,7 @@ const PartnerDashboard = () => {
                   <div className="flex-1">
                     <p className="text-sm font-medium text-green-600 mb-1">Today's Earnings</p>
                     <CurrencyCounter 
-                      value={statistics.todayEarnings} 
+                      value={todayStats.earnings || 0} 
                       className="text-3xl font-bold text-green-900"
                     />
                     <div className="flex items-center mt-2">
@@ -755,7 +830,7 @@ const PartnerDashboard = () => {
                     <p className="text-sm font-medium text-purple-600 mb-1">Average Rating</p>
                     <div className="flex items-center">
                       <Counter 
-                        value={statistics.averageRating} 
+                        value={totalStats.averageRating || 5.0} 
                         decimals={1}
                         className="text-3xl font-bold text-purple-900"
                       />
@@ -786,7 +861,7 @@ const PartnerDashboard = () => {
                   <div className="flex-1">
                     <p className="text-sm font-medium text-orange-600 mb-1">Completion Rate</p>
                     <PercentageCounter 
-                      value={statistics.completionRate} 
+                      value={statistics.completionRate || 100} 
                       className="text-3xl font-bold text-orange-900"
                     />
                     <div className="flex items-center mt-2">
@@ -851,6 +926,14 @@ const PartnerDashboard = () => {
                         </div>
                       </div>
                       
+                      {/* Customer Email */}
+                      {currentOrder.customerEmail && currentOrder.customerEmail !== 'Not provided' && (
+                        <div className="mt-4">
+                          <p className="text-white/70 text-sm mb-1">Customer Email</p>
+                          <p className="text-white font-medium">{currentOrder.customerEmail}</p>
+                        </div>
+                      )}
+                      
                       <div className="mt-4">
                         <p className="text-white/70 text-sm mb-2">Delivery Address</p>
                         <div className="flex items-start space-x-2">
@@ -858,6 +941,16 @@ const PartnerDashboard = () => {
                           <p className="text-white">{currentOrder.customerAddress}</p>
                         </div>
                       </div>
+                      
+                      {/* Special Instructions */}
+                      {currentOrder.specialInstructions && (
+                        <div className="mt-4">
+                          <p className="text-white/70 text-sm mb-2">Special Instructions</p>
+                          <div className="bg-white/10 rounded-lg p-3">
+                            <p className="text-white text-sm">{currentOrder.specialInstructions}</p>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Action Buttons */}
@@ -905,6 +998,19 @@ const PartnerDashboard = () => {
                       >
                         Call Customer
                       </Button>
+                      
+                      {/* Email Customer Button */}
+                      {currentOrder.customerEmail && currentOrder.customerEmail !== 'Not provided' && (
+                        <Button
+                          onClick={() => window.open(`mailto:${currentOrder.customerEmail}`)}
+                          fullWidth
+                          variant="ghost"
+                          size="lg"
+                          className="text-white border-white/30 hover:bg-white/10"
+                        >
+                          📧 Email Customer
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -930,9 +1036,20 @@ const PartnerDashboard = () => {
                     <BellIcon className="h-6 w-6 mr-2 text-indigo-600" />
                     Available Orders
                   </span>
+                  <div className="flex items-center space-x-3">
                   <span className="text-sm text-gray-500">
-                    {availableOrders.length} orders nearby
+                      {availableOrders.length} orders available
                   </span>
+                    <Button
+                      onClick={loadDashboardData}
+                      variant="ghost"
+                      size="sm"
+                      icon={ArrowPathIcon}
+                      className="text-indigo-600 hover:text-indigo-700"
+                    >
+                      Refresh
+                    </Button>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
@@ -940,70 +1057,136 @@ const PartnerDashboard = () => {
                   {availableOrders.length === 0 ? (
                     <div className="text-center py-12 text-gray-500">
                       <TruckIcon className="h-16 w-16 mx-auto mb-4 text-gray-300" />
-                      <p className="text-xl font-medium mb-2">No orders available</p>
-                      <p>Check back in a few minutes for new orders</p>
+                      <p className="text-xl font-medium mb-2">No Available Orders</p>
+                    <p className="text-gray-600 mb-4">
+                        All orders are currently assigned or completed.<br/>
+                        New orders will appear here when they're ready for pickup.
+                    </p>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-md mx-auto">
+                      <div className="flex items-center text-blue-800 text-sm">
+                        <BellIcon className="h-5 w-5 mr-2" />
+                          <span className="font-medium">Real-time updates enabled</span>
                     </div>
+                      <p className="text-blue-700 text-xs mt-1">
+                          You'll see new orders automatically when they're created
+                      </p>
+                            </div>
+                          </div>
                   ) : (
-                    <div className="space-y-4 p-6">
+                    <div className="space-y-1">
                       {availableOrders.map((order, index) => (
                         <motion.div
                           key={order._id}
-                          className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-all duration-200 bg-white"
-                          initial={{ opacity: 0, y: 20 }}
+                          className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors border-b last:border-b-0 cursor-pointer"
+                          initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: index * 0.1 }}
-                          whileHover={{ scale: 1.02 }}
+                          transition={{ delay: index * 0.05 }}
+                          whileHover={{ x: 4, backgroundColor: '#f8fafc' }}
                         >
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                                <span className="text-indigo-600 font-semibold text-sm">
-                                  #{order.orderId?.slice(-3) || '000'}
-                                </span>
+                          <div className="flex items-center space-x-4 flex-1">
+                            {/* Order Icon */}
+                            <div className="w-12 h-12 bg-gradient-to-r from-orange-100 to-red-100 rounded-xl flex items-center justify-center">
+                              <span className="text-orange-600 font-semibold text-sm">
+                                #{order.orderId?.slice(-3) || '000'}
+                              </span>
+                </div>
+                            
+                            {/* Order Details */}
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <p className="font-semibold text-gray-900">
+                                  {order.customerName}
+                                </p>
+                                <div className="flex items-center space-x-2">
+                                  <StatusBadge status={order.status} size="sm" />
+                                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                                    {order.timeAgo}
+                                  </span>
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-semibold text-gray-900">{order.customerName}</p>
-                                <p className="text-sm text-gray-500">{formatTime(order.createdAt)}</p>
+                              
+                              <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                                <div className="flex items-center space-x-1">
+                                  <ClockIcon className="h-4 w-4" />
+                                  <span>{order.formattedTime}</span>
+                                </div>
+                                <div className="flex items-center space-x-1">
+                                  <PhoneIcon className="h-4 w-4" />
+                                  <span>{order.customerPhone}</span>
+                                </div>
                               </div>
+                              
+                              <div className="flex items-start space-x-1 mt-2">
+                                <MapPinIcon className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                <p className="text-sm text-gray-600 line-clamp-2">
+                                  {order.customerAddress}
+                                </p>
+                              </div>
+                              
+                              {/* Special Instructions */}
+                              {order.specialInstructions && (
+                                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+                                  <p className="text-xs text-yellow-800">
+                                    <span className="font-medium">Note:</span> {order.specialInstructions}
+                                  </p>
+                                </div>
+                              )}
                             </div>
+                          </div>
+                          
+                          {/* Order Amount and Actions */}
+                          <div className="flex items-center space-x-4 ml-4">
                             <div className="text-right">
-                              <p className="text-lg font-bold text-gray-900">
-                                {formatCurrency(order.totalAmount)}
+                              <p className="font-bold text-gray-900 text-lg">
+                                {order.formattedAmount}
                               </p>
-                              <StatusBadge status={order.status} size="sm" />
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center text-sm text-gray-600 mb-3">
-                            <MapPinIcon className="h-4 w-4 mr-1" />
-                            <span className="truncate">{order.customerAddress}</span>
-                          </div>
-                          
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-4 text-sm text-gray-500">
-                              <span className="flex items-center">
-                                <ClockIcon className="h-4 w-4 mr-1" />
-                                ~25 min
-                              </span>
-                              <span className="flex items-center">
-                                <GlobeAltIcon className="h-4 w-4 mr-1" />
-                                2.5 km
-                              </span>
+                              <p className="text-xs text-gray-500">
+                                {order.items?.length || 0} items
+                              </p>
                             </div>
                             
-                            <Button
-                              onClick={() => handleAcceptOrder(order._id)}
-                              size="sm"
-                              className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
-                            >
-                              Accept Order
-                            </Button>
+                            {/* Action Buttons */}
+                            <div className="flex flex-col space-y-2">
+                              <Button
+                                onClick={() => window.open(`tel:${order.customerPhone}`)}
+                                variant="ghost"
+                                size="sm"
+                                icon={PhoneIcon}
+                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              >
+                                Call
+                              </Button>
+                              
+                              {order.customerEmail && order.customerEmail !== 'Not provided' && (
+                                <Button
+                                  onClick={() => window.open(`mailto:${order.customerEmail}`)}
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-green-600 hover:text-green-700 hover:bg-green-50 text-xs"
+                                >
+                                  📧 Email
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </motion.div>
                       ))}
                     </div>
                   )}
                 </div>
+                
+                {/* Footer with info */}
+                {availableOrders.length > 0 && (
+                  <div className="border-t border-gray-200 p-4 bg-gray-50">
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span>Live updates enabled</span>
+                      </div>
+                      <span>Orders ready for pickup</span>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </motion.div>
@@ -1036,7 +1219,7 @@ const PartnerDashboard = () => {
                     </div>
                   </div>
                   <Counter 
-                    value={statistics.totalDeliveries} 
+                    value={totalStats.totalDeliveries || 0} 
                     className="text-2xl font-bold text-blue-900"
                   />
                 </div>
@@ -1053,7 +1236,7 @@ const PartnerDashboard = () => {
                     </div>
                   </div>
                   <CurrencyCounter 
-                    value={statistics.totalEarnings} 
+                    value={totalStats.totalEarnings || 0} 
                     className="text-2xl font-bold text-green-900"
                   />
                 </div>
@@ -1071,7 +1254,7 @@ const PartnerDashboard = () => {
                   </div>
                   <div className="text-right">
                     <Counter 
-                      value={statistics.averageDeliveryTime} 
+                      value={25} 
                       suffix=" min"
                       className="text-2xl font-bold text-purple-900"
                     />

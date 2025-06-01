@@ -59,11 +59,4 @@ export const SOCKET_EVENTS = {
   PARTNER_STATUS_CHANGED: 'partnerStatusChanged',
   NEW_ORDER: 'newOrder',
   ORDER_ASSIGNED: 'orderAssigned'
-};
-
-// Demo Credentials
-export const DEMO_CREDENTIALS = {
-  ADMIN: { email: 'admin@zomato.com', password: 'admin123' },
-  MANAGER: { email: 'manager@zomato.com', password: 'manager123' },
-  PARTNER: { email: 'partner@zomato.com', password: 'partner123' }
 }; 

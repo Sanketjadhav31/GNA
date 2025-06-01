@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { SocketProvider } from './context/SocketContext';
+import ProtectedRoute from './components/common/ProtectedRoute';
 
 // Pages
 import LoginPage from './pages/LoginPage';
@@ -12,6 +13,7 @@ import DashboardPage from './pages/DashboardPage';
 import OrdersPage from './pages/OrdersPage';
 import PartnersPage from './pages/PartnersPage';
 import PartnerDashboard from './pages/PartnerDashboard';
+import AvailableOrders from './pages/AvailableOrders';
 import CurrentOrder from './pages/CurrentOrder';
 import OrderHistory from './pages/OrderHistory';
 import Profile from './pages/Profile';
@@ -33,26 +35,6 @@ const SimpleLoading = () => (
     </div>
   </div>
 );
-
-// Simple Protected Route
-const ProtectedRoute = ({ children, requiredRole = null }) => {
-  const { isAuthenticated, loading, role } = useAuth();
-
-  if (loading) {
-    return <SimpleLoading />;
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (requiredRole && role !== requiredRole) {
-    const redirectPath = role === 'partner' ? '/partner-dashboard' : '/dashboard';
-    return <Navigate to={redirectPath} replace />;
-  }
-
-  return children;
-};
 
 // App Content Component
 const AppContent = () => {
@@ -85,7 +67,7 @@ const AppContent = () => {
             <Route 
               path="dashboard" 
               element={
-                <ProtectedRoute requiredRole="manager">
+                <ProtectedRoute allowedRoles={['admin', 'manager']}>
                   <DashboardPage />
                 </ProtectedRoute>
               } 
@@ -93,7 +75,7 @@ const AppContent = () => {
             <Route 
               path="orders" 
               element={
-                <ProtectedRoute requiredRole="manager">
+                <ProtectedRoute allowedRoles={['admin', 'manager']}>
                   <OrdersPage />
                 </ProtectedRoute>
               } 
@@ -101,7 +83,7 @@ const AppContent = () => {
             <Route 
               path="partners" 
               element={
-                <ProtectedRoute requiredRole="manager">
+                <ProtectedRoute allowedRoles={['admin', 'manager']}>
                   <PartnersPage />
                 </ProtectedRoute>
               } 
@@ -109,7 +91,7 @@ const AppContent = () => {
             <Route 
               path="analytics" 
               element={
-                <ProtectedRoute requiredRole="manager">
+                <ProtectedRoute allowedRoles={['admin', 'manager']}>
                   <Analytics />
                 </ProtectedRoute>
               } 
@@ -119,15 +101,23 @@ const AppContent = () => {
             <Route 
               path="partner-dashboard" 
               element={
-                <ProtectedRoute requiredRole="partner">
+                <ProtectedRoute allowedRoles={['partner']}>
                   <PartnerDashboard />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="available-orders" 
+              element={
+                <ProtectedRoute allowedRoles={['partner']}>
+                  <AvailableOrders />
                 </ProtectedRoute>
               } 
             />
             <Route 
               path="current-order" 
               element={
-                <ProtectedRoute requiredRole="partner">
+                <ProtectedRoute allowedRoles={['partner']}>
                   <CurrentOrder />
                 </ProtectedRoute>
               } 
@@ -135,7 +125,7 @@ const AppContent = () => {
             <Route 
               path="order-history" 
               element={
-                <ProtectedRoute requiredRole="partner">
+                <ProtectedRoute allowedRoles={['partner']}>
                   <OrderHistory />
                 </ProtectedRoute>
               } 
@@ -143,7 +133,7 @@ const AppContent = () => {
             <Route 
               path="profile" 
               element={
-                <ProtectedRoute requiredRole="partner">
+                <ProtectedRoute allowedRoles={['partner']}>
                   <Profile />
                 </ProtectedRoute>
               } 
@@ -166,33 +156,25 @@ const AppContent = () => {
 
         {/* Toast Configuration */}
         <Toaster
-          position="bottom-right"
-          reverseOrder={false}
-          gutter={8}
-          containerClassName="z-50"
+          position="top-right"
           toastOptions={{
             duration: 4000,
             style: {
-              background: isDarkMode ? '#374151' : '#ffffff',
-              color: isDarkMode ? '#f3f4f6' : '#111827',
-              border: `1px solid ${isDarkMode ? '#4b5563' : '#e5e7eb'}`,
-              borderRadius: '0.5rem',
-              fontSize: '0.875rem',
-              fontWeight: '500',
-              boxShadow: isDarkMode 
-                ? '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2)'
-                : '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+              background: '#363636',
+              color: '#fff',
             },
             success: {
+              duration: 3000,
               iconTheme: {
-                primary: '#10b981',
-                secondary: isDarkMode ? '#374151' : '#ffffff',
+                primary: '#4ade80',
+                secondary: '#fff',
               },
             },
             error: {
+              duration: 5000,
               iconTheme: {
                 primary: '#ef4444',
-                secondary: isDarkMode ? '#374151' : '#ffffff',
+                secondary: '#fff',
               },
             },
           }}

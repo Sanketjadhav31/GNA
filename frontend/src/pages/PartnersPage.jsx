@@ -46,21 +46,15 @@ const PartnersPage = () => {
       
       if (storedPartners.length > 0) {
         setPartners(storedPartners);
-        console.log('✅ Partners loaded from localStorage:', storedPartners.length);
       } else {
-        // If no stored partners, initialize with mock data
-        console.log('ℹ️ No stored partners found, initializing with demo data');
-        localStorage.setItem('manager_partners', JSON.stringify(mockPartners));
-        setPartners(mockPartners);
-        console.log('✅ Demo partners initialized:', mockPartners.length);
+        // Initialize with empty array if no stored partners
+        setPartners([]);
       }
       
     } catch (error) {
       console.error('❌ Error loading partners:', error);
-      // Fallback to mock data on error
-      console.log('⚠️ Using mock partners data due to error');
-      setPartners(mockPartners);
-      localStorage.setItem('manager_partners', JSON.stringify(mockPartners));
+      // Initialize with empty array on error
+      setPartners([]);
     } finally {
       setLoading(false);
     }
@@ -77,130 +71,6 @@ const PartnersPage = () => {
     aadharNumber: '',
     licenseNumber: ''
   });
-
-  // Mock partners data
-  const mockPartners = [
-    {
-      _id: 'p1',
-      name: 'Raj Kumar',
-      phone: '+91 7654321098',
-      email: 'raj.kumar@email.com',
-      address: 'Sector 45, Gurugram',
-      vehicleType: 'BIKE',
-      vehicleNumber: 'HR-26-AX-1234',
-      availability: 'BUSY',
-      currentOrder: '2',
-      rating: 4.8,
-      totalDeliveries: 156,
-      todayDeliveries: 8,
-      earnings: 2240,
-      joinDate: '2023-01-15',
-      emergencyContact: '+91 9876543210',
-      aadharNumber: 'XXXX-XXXX-1234',
-      licenseNumber: 'HR-05-20231234',
-      onlineStatus: true,
-      lastSeen: new Date().toISOString(),
-      completionRate: 96.5,
-      avgRating: 4.8,
-      totalEarnings: 45600
-    },
-    {
-      _id: 'p2',
-      name: 'Suresh Singh',
-      phone: '+91 6543210876',
-      email: 'suresh.singh@email.com',
-      address: 'DLF Phase 2, Gurugram',
-      vehicleType: 'BIKE',
-      vehicleNumber: 'HR-26-BY-5678',
-      availability: 'AVAILABLE',
-      currentOrder: null,
-      rating: 4.6,
-      totalDeliveries: 143,
-      todayDeliveries: 6,
-      earnings: 1680,
-      joinDate: '2023-02-20',
-      emergencyContact: '+91 8765432109',
-      aadharNumber: 'XXXX-XXXX-5678',
-      licenseNumber: 'HR-05-20235678',
-      onlineStatus: true,
-      lastSeen: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-      completionRate: 94.2,
-      avgRating: 4.6,
-      totalEarnings: 38900
-    },
-    {
-      _id: 'p3',
-      name: 'Amit Sharma',
-      phone: '+91 5432109765',
-      email: 'amit.sharma@email.com',
-      address: 'Cyber City, Gurugram',
-      vehicleType: 'SCOOTER',
-      vehicleNumber: 'HR-26-CZ-9012',
-      availability: 'AVAILABLE',
-      currentOrder: null,
-      rating: 4.9,
-      totalDeliveries: 189,
-      todayDeliveries: 10,
-      earnings: 2800,
-      joinDate: '2022-11-10',
-      emergencyContact: '+91 7654321098',
-      aadharNumber: 'XXXX-XXXX-9012',
-      licenseNumber: 'HR-05-20229012',
-      onlineStatus: true,
-      lastSeen: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
-      completionRate: 98.1,
-      avgRating: 4.9,
-      totalEarnings: 52300
-    },
-    {
-      _id: 'p4',
-      name: 'Rohit Verma',
-      phone: '+91 4321098654',
-      email: 'rohit.verma@email.com',
-      address: 'Sector 56, Gurugram',
-      vehicleType: 'BIKE',
-      vehicleNumber: 'HR-26-DX-3456',
-      availability: 'OFFLINE',
-      currentOrder: null,
-      rating: 4.4,
-      totalDeliveries: 98,
-      todayDeliveries: 0,
-      earnings: 0,
-      joinDate: '2023-03-05',
-      emergencyContact: '+91 6543210987',
-      aadharNumber: 'XXXX-XXXX-3456',
-      licenseNumber: 'HR-05-20233456',
-      onlineStatus: false,
-      lastSeen: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      completionRate: 92.8,
-      avgRating: 4.4,
-      totalEarnings: 28400
-    },
-    {
-      _id: 'p5',
-      name: 'Vikash Kumar',
-      phone: '+91 3210987543',
-      email: 'vikash.kumar@email.com',
-      address: 'Sector 48, Gurugram',
-      vehicleType: 'BIKE',
-      vehicleNumber: 'HR-26-EY-7890',
-      availability: 'AVAILABLE',
-      currentOrder: null,
-      rating: 4.7,
-      totalDeliveries: 124,
-      todayDeliveries: 7,
-      earnings: 1960,
-      joinDate: '2023-01-28',
-      emergencyContact: '+91 5432109876',
-      aadharNumber: 'XXXX-XXXX-7890',
-      licenseNumber: 'HR-05-20237890',
-      onlineStatus: true,
-      lastSeen: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-      completionRate: 95.3,
-      avgRating: 4.7,
-      totalEarnings: 41200
-    }
-  ];
 
   const handleAddPartner = () => {
     if (!newPartner.name || !newPartner.phone || !newPartner.vehicleNumber) {

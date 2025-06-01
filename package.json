@@ -1,0 +1,28 @@
+{
+  "name": "zomato-ops-pro",
+  "version": "1.0.0",
+  "description": "Zomato Operations Pro - Restaurant Order Management System",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "backend": "cd backend && npm run dev",
+    "frontend": "cd frontend && npm start",
+    "start": "npm run dev",
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build"
+  },
+  "keywords": [
+    "restaurant",
+    "order-management",
+    "delivery",
+    "zomato",
+    "react",
+    "nodejs",
+    "mongodb"
+  ],
+  "author": "GNA Project",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+} 

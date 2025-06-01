@@ -1,0 +1,244 @@
+[
+  {
+    "_id": "17486589234038ncjdu913",
+    "orderId": "ORD-923403",
+    "customerName": "John Smith",
+    "customerPhone": "+91 9876543210",
+    "customerEmail": "john.smith@email.com",
+    "customerAddress": "123 MG Road, Bangalore, Karnataka 560001",
+    "totalAmount": 450,
+    "status": "PREP",
+    "items": [
+      {
+        "name": "Chicken Biryani",
+        "quantity": 1,
+        "price": 350
+      },
+      {
+        "name": "Raita",
+        "quantity": 1,
+        "price": 50
+      },
+      {
+        "name": "Gulab Jamun",
+        "quantity": 2,
+        "price": 50
+      }
+    ],
+    "specialInstructions": "Extra spicy, no onions",
+    "createdAt": "2025-05-31T02:35:23.403Z",
+    "restaurantInfo": {
+      "name": "Biryani Palace",
+      "address": "FC Road, Pune"
+    }
+  },
+  {
+    "_id": "1748658923404g0m5owe89",
+    "orderId": "ORD-923404",
+    "customerName": "Sarah Johnson",
+    "customerPhone": "+91 8765432109",
+    "customerEmail": "sarah.j@email.com",
+    "customerAddress": "456 Brigade Road, Bangalore, Karnataka 560025",
+    "totalAmount": 320,
+    "status": "PREP",
+    "items": [
+      {
+        "name": "Margherita Pizza",
+        "quantity": 1,
+        "price": 280
+      },
+      {
+        "name": "Garlic Bread",
+        "quantity": 1,
+        "price": 40
+      }
+    ],
+    "specialInstructions": "Ring the bell twice",
+    "createdAt": "2025-05-31T02:30:23.404Z",
+    "restaurantInfo": {
+      "name": "Pizza Corner",
+      "address": "Koramangala, Bangalore"
+    }
+  },
+  {
+    "_id": "1748658923404wowdu33y4",
+    "orderId": "ORD-923404",
+    "customerName": "Raj Patel",
+    "customerPhone": "+91 7654321098",
+    "customerEmail": "raj.patel@email.com",
+    "customerAddress": "789 Commercial Street, Bangalore, Karnataka 560001",
+    "totalAmount": 280,
+    "status": "PREP",
+    "items": [
+      {
+        "name": "Masala Dosa",
+        "quantity": 2,
+        "price": 120
+      },
+      {
+        "name": "Filter Coffee",
+        "quantity": 2,
+        "price": 40
+      }
+    ],
+    "createdAt": "2025-05-31T02:25:23.404Z",
+    "restaurantInfo": {
+      "name": "South Indian Delights",
+      "address": "Jayanagar, Bangalore"
+    }
+  },
+  {
+    "_id": "174865892340450tv2hjdu",
+    "orderId": "ORD-923404",
+    "customerName": "Emily Chen",
+    "customerPhone": "+91 6543210987",
+    "customerEmail": "emily.chen@email.com",
+    "customerAddress": "321 Indiranagar, Bangalore, Karnataka 560038",
+    "totalAmount": 520,
+    "status": "PREP",
+    "items": [
+      {
+        "name": "Hakka Noodles",
+        "quantity": 1,
+        "price": 180
+      },
+      {
+        "name": "Manchurian",
+        "quantity": 1,
+        "price": 160
+      },
+      {
+        "name": "Spring Rolls",
+        "quantity": 4,
+        "price": 180
+      }
+    ],
+    "specialInstructions": "Less oil, medium spice",
+    "createdAt": "2025-05-31T02:33:23.404Z",
+    "restaurantInfo": {
+      "name": "Chinese Garden",
+      "address": "HSR Layout, Bangalore"
+    }
+  },
+  {
+    "_id": "17486592132510i6dnj41z",
+    "orderId": "ORD-213251",
+    "customerName": "John Smith",
+    "customerPhone": "+91 9876543210",
+    "customerEmail": "john.smith@email.com",
+    "customerAddress": "123 MG Road, Bangalore, Karnataka 560001",
+    "totalAmount": 450,
+    "status": "PREP",
+    "items": [
+      {
+        "name": "Chicken Biryani",
+        "quantity": 1,
+        "price": 350
+      },
+      {
+        "name": "Raita",
+        "quantity": 1,
+        "price": 50
+      },
+      {
+        "name": "Gulab Jamun",
+        "quantity": 2,
+        "price": 50
+      }
+    ],
+    "specialInstructions": "Extra spicy, no onions",
+    "createdAt": "2025-05-31T02:40:13.251Z",
+    "restaurantInfo": {
+      "name": "Biryani Palace",
+      "address": "FC Road, Pune"
+    }
+  },
+  {
+    "_id": "1748659213254peemyfyek",
+    "orderId": "ORD-213254",
+    "customerName": "Sarah Johnson",
+    "customerPhone": "+91 8765432109",
+    "customerEmail": "sarah.j@email.com",
+    "customerAddress": "456 Brigade Road, Bangalore, Karnataka 560025",
+    "totalAmount": 320,
+    "status": "PREP",
+    "items": [
+      {
+        "name": "Margherita Pizza",
+        "quantity": 1,
+        "price": 280
+      },
+      {
+        "name": "Garlic Bread",
+        "quantity": 1,
+        "price": 40
+      }
+    ],
+    "specialInstructions": "Ring the bell twice",
+    "createdAt": "2025-05-31T02:35:13.254Z",
+    "restaurantInfo": {
+      "name": "Pizza Corner",
+      "address": "Koramangala, Bangalore"
+    }
+  },
+  {
+    "_id": "17486592132548mk3gjy1u",
+    "orderId": "ORD-213254",
+    "customerName": "Raj Patel",
+    "customerPhone": "+91 7654321098",
+    "customerEmail": "raj.patel@email.com",
+    "customerAddress": "789 Commercial Street, Bangalore, Karnataka 560001",
+    "totalAmount": 280,
+    "status": "PREP",
+    "items": [
+      {
+        "name": "Masala Dosa",
+        "quantity": 2,
+        "price": 120
+      },
+      {
+        "name": "Filter Coffee",
+        "quantity": 2,
+        "price": 40
+      }
+    ],
+    "createdAt": "2025-05-31T02:30:13.254Z",
+    "restaurantInfo": {
+      "name": "South Indian Delights",
+      "address": "Jayanagar, Bangalore"
+    }
+  },
+  {
+    "_id": "1748659213254fib7oi4io",
+    "orderId": "ORD-213254",
+    "customerName": "Emily Chen",
+    "customerPhone": "+91 6543210987",
+    "customerEmail": "emily.chen@email.com",
+    "customerAddress": "321 Indiranagar, Bangalore, Karnataka 560038",
+    "totalAmount": 520,
+    "status": "PREP",
+    "items": [
+      {
+        "name": "Hakka Noodles",
+        "quantity": 1,
+        "price": 180
+      },
+      {
+        "name": "Manchurian",
+        "quantity": 1,
+        "price": 160
+      },
+      {
+        "name": "Spring Rolls",
+        "quantity": 4,
+        "price": 180
+      }
+    ],
+    "specialInstructions": "Less oil, medium spice",
+    "createdAt": "2025-05-31T02:38:13.254Z",
+    "restaurantInfo": {
+      "name": "Chinese Garden",
+      "address": "HSR Layout, Bangalore"
+    }
+  }
+]

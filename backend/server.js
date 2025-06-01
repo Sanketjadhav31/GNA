@@ -26,6 +26,9 @@ const authRoutes = require('./routes/auth');
 const orderRoutes = require('./routes/orders');
 const partnerRoutes = require('./routes/partners');
 const analyticsRoutes = require('./routes/analytics');
+const notificationRoutes = require('./routes/notifications');
+const usersRoutes = require('./routes/users');
+const notificationService = require('./services/notificationService');
 
 // Initialize Express app
 const app = express();
@@ -39,6 +42,9 @@ const io = socketIo(server, {
     credentials: true
   }
 });
+
+// Set up notification service with Socket.IO
+notificationService.setSocketIO(io);
 
 // Connect to MongoDB
 connectDB();
@@ -66,7 +72,7 @@ app.use(cors({
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token']
 }));
 
@@ -119,6 +125,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/partners', partnerRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/users', usersRoutes);
 
 // Socket.IO authentication middleware
 io.use((socket, next) => {
@@ -128,67 +136,163 @@ io.use((socket, next) => {
     if (token) {
       const jwt = require('jsonwebtoken');
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      socket.userId = decoded.id || decoded.userId;
+      socket.userId = decoded.userId || decoded.id;
       socket.userRole = decoded.role;
       console.log(`✅ Socket authenticated for user: ${socket.userId}, role: ${socket.userRole}`);
-    } else {
-      console.log('⚠️ Socket connection without token - allowing anonymous connection');
     }
     
-    next(); // Always allow connection, even without auth
+    next();
   } catch (error) {
     console.log('⚠️ Socket authentication error:', error.message);
-    // Allow connection even with auth errors
     next();
   }
 });
 
 // Socket.IO connection handling
-io.on(SOCKET_EVENTS.CONNECTION, (socket) => {
-  console.log(`Client connected: ${socket.id}${socket.userId ? ` (User: ${socket.userId})` : ''}`);
+io.on('connection', (socket) => {
+  console.log(`📡 User connected: ${socket.id}`);
 
-  // Join user to role-based rooms
-  socket.on(SOCKET_EVENTS.JOIN_ROOM, (data) => {
-    const { role, userId } = data;
+  // Join room based on role and user data
+  socket.on('join', (roomId) => {
+    socket.join(roomId);
+    console.log(`👤 User joined room: ${roomId}`);
+  });
+
+  // Enhanced room joining with multiple room support
+  socket.on('join_room', (data) => {
+    const { role, userId, userEmail } = data;
     
-    if (role) {
-      socket.join(`role_${role}`);
-      console.log(`User ${userId || socket.userId || 'unknown'} joined room: role_${role}`);
+    if (role === 'manager') {
+      socket.join('manager');
+      console.log(`👨‍💼 Manager joined manager room`);
+    } else if (role === 'partner') {
+      // Join both user ID and email-based rooms for partners
+      socket.join(userId); // Partner joins their user ID room
+      if (userEmail) {
+        socket.join(userEmail); // Partner also joins their email room
+        console.log(`🚚 Partner ${userId} (${userEmail}) joined personal rooms`);
+      } else {
+        console.log(`🚚 Partner ${userId} joined personal room`);
+      }
     }
     
-    const actualUserId = userId || socket.userId;
-    if (actualUserId) {
-      socket.join(`user_${actualUserId}`);
-      console.log(`User ${actualUserId} joined personal room`);
+    // Auto-join role-based rooms based on socket authentication
+    if (socket.userRole === 'manager') {
+      socket.join('manager');
+      console.log(`👨‍💼 Manager auto-joined manager room`);
+    } else if (socket.userRole === 'partner') {
+      socket.join(socket.userId); // Partner joins their own room
+      console.log(`🚚 Partner ${socket.userId} auto-joined personal room`);
     }
   });
 
-  // Leave room
-  socket.on(SOCKET_EVENTS.LEAVE_ROOM, (roomName) => {
-    socket.leave(roomName);
-    console.log(`Socket ${socket.id} left room: ${roomName}`);
+  // Handle direct order assignment to partner
+  socket.on('assign_order_to_partner', (data) => {
+    const { partnerId, partnerEmail, order, assignedBy } = data;
+    console.log(`📦 Direct order assignment: ${order.orderId} to partner ${partnerId} (${partnerEmail})`);
+    
+    // Emit to partner's rooms
+    socket.to(partnerId).emit('order-assigned', {
+      order,
+      partner: {
+        id: partnerId,
+        email: partnerEmail
+      },
+      assignedBy,
+      message: `You have been assigned order ${order.orderId}`
+    });
+    
+    // Also emit to email-based room if available
+    if (partnerEmail) {
+      socket.to(partnerEmail).emit('order-assigned', {
+        order,
+        partner: {
+          id: partnerId,
+          email: partnerEmail
+        },
+        assignedBy,
+        message: `You have been assigned order ${order.orderId}`
+      });
+    }
+  });
+
+  // Handle partner requesting an order
+  socket.on('partner_requests_order', (data) => {
+    const { orderId, partnerId, partnerName, partnerEmail, message } = data;
+    console.log(`📝 Partner request: ${partnerName} (${partnerId}) wants order ${orderId}`);
+    
+    // Notify all managers about the partner request
+    socket.to('manager').emit('partner_order_request', {
+      orderId,
+      partnerId,
+      partnerName,
+      partnerEmail,
+      message,
+      timestamp: new Date().toISOString(),
+      requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    });
+    
+    console.log(`📢 Notified managers about partner request for order ${orderId}`);
+  });
+
+  // Handle partner status updates
+  socket.on('order_status_update', (data) => {
+    console.log(`📝 Partner status update received:`, data);
+    
+    // Broadcast to all managers
+    socket.to('manager').emit('order_status_update', data);
+    
+    // Also emit to all connected clients for real-time updates
+    io.emit('partner_status_update', {
+      orderId: data.orderId,
+      orderNumber: data.orderNumber,
+      status: data.status,
+      partnerId: data.partnerId,
+      partnerName: data.partnerName,
+      partnerEmail: data.partnerEmail,
+      customerName: data.customerName,
+      updatedAt: data.updatedAt || new Date().toISOString()
+    });
+    
+    console.log(`📡 Status update broadcasted to managers: ${data.orderNumber} → ${data.status}`);
+  });
+
+  // Handle manager notifications
+  socket.on('notify_managers', (data) => {
+    console.log(`📢 Manager notification:`, data);
+    
+    // Send to all managers
+    socket.to('manager').emit('notify_managers', data);
+    
+    // Also emit specific event for order status updates
+    if (data.type === 'order_status_updated') {
+      socket.to('manager').emit('order_status_updated', {
+        orderId: data.orderId,
+        orderNumber: data.orderNumber,
+        newStatus: data.newStatus,
+        partnerId: data.partnerId,
+        partnerName: data.partnerName,
+        partnerEmail: data.partnerEmail,
+        customerName: data.customerName,
+        message: data.message,
+        timestamp: data.timestamp
+      });
+    }
+    
+    console.log(`📡 Manager notification sent: ${data.message}`);
   });
 
   // Handle disconnection
-  socket.on(SOCKET_EVENTS.DISCONNECT, (reason) => {
-    console.log(`Client disconnected: ${socket.id}, reason: ${reason}`);
-  });
-
-  // Handle partner location updates
-  socket.on('partner_location_update', (data) => {
-    // Broadcast to managers and admins
-    socket.to('role_manager').to('role_admin').emit('partner_location_changed', data);
-  });
-
-  // Handle order status updates
-  socket.on('order_status_update', (data) => {
-    // Broadcast to all relevant users
-    io.emit(SOCKET_EVENTS.ORDER_STATUS_CHANGED, data);
+  socket.on('disconnect', () => {
+    console.log(`📡 User disconnected: ${socket.id}`);
   });
 });
 
-// Make io accessible to route handlers
-app.set('io', io);
+// Make io available to routes
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
 // Global error handling middleware
 app.use((err, req, res, next) => {

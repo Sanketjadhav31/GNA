@@ -130,7 +130,7 @@ const CurrentOrder = () => {
       setUpdating(true);
       console.log('🔄 Updating order status from', currentOrder.status, 'to', newStatus);
       
-      // Update order status in demo mode
+      // Update order status
       const updatedOrder = {
         ...currentOrder,
         status: newStatus,

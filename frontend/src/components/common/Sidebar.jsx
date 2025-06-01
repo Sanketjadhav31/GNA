@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   HomeIcon, 
@@ -14,14 +14,69 @@ import {
   CheckCircleIcon,
   UserIcon,
   DocumentTextIcon,
-  CogIcon
+  CogIcon,
+  MapPinIcon,
+  PhoneIcon,
+  CurrencyRupeeIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthContext';
+import orderService from '../../services/orderService';
 
 const Sidebar = ({ isCollapsed, onToggleCollapse }) => {
   const { user } = useAuth();
   const location = useLocation();
   const [activeSubmenu, setActiveSubmenu] = useState(null);
+  const [currentOrderDetails, setCurrentOrderDetails] = useState(null);
+
+  // Load current order details for partners
+  useEffect(() => {
+    if (user?.role === 'partner' && user?.currentOrder) {
+      // Load order details from backend API only
+      const loadCurrentOrder = async () => {
+        try {
+          const response = await orderService.getCurrentOrder();
+          if (response.success && response.data) {
+            setCurrentOrderDetails(response.data);
+          } else {
+            setCurrentOrderDetails(null);
+          }
+        } catch (error) {
+          console.error('Error loading current order:', error);
+          setCurrentOrderDetails(null);
+        }
+      };
+      
+      loadCurrentOrder();
+    } else {
+      setCurrentOrderDetails(null);
+    }
+  }, [user]);
+
+  // Listen for real-time order updates
+  useEffect(() => {
+    const handleOrderStatusUpdate = (event) => {
+      if (currentOrderDetails && event.detail.orderId === currentOrderDetails._id) {
+        setCurrentOrderDetails(prev => ({
+          ...prev,
+          status: event.detail.newStatus
+        }));
+      }
+    };
+
+    const handleOrderCompleted = (event) => {
+      if (currentOrderDetails && event.detail.orderId === currentOrderDetails._id) {
+        setCurrentOrderDetails(null);
+      }
+    };
+
+    window.addEventListener('order-status-updated', handleOrderStatusUpdate);
+    window.addEventListener('orderCompleted', handleOrderCompleted);
+
+    return () => {
+      window.removeEventListener('order-status-updated', handleOrderStatusUpdate);
+      window.removeEventListener('orderCompleted', handleOrderCompleted);
+    };
+  }, [currentOrderDetails, user]);
 
   // Navigation configuration based on role
   const getNavigationItems = () => {
@@ -80,6 +135,13 @@ const Sidebar = ({ isCollapsed, onToggleCollapse }) => {
         name: 'Dashboard',
         href: '/partner-dashboard',
         icon: HomeIcon,
+        badge: null,
+        submenu: null
+      },
+      {
+        name: 'Available Orders',
+        href: '/available-orders',
+        icon: ShoppingBagIcon,
         badge: null,
         submenu: null
       },
@@ -242,6 +304,90 @@ const Sidebar = ({ isCollapsed, onToggleCollapse }) => {
           </div>
         ))}
       </nav>
+
+      {/* Current Active Order Section for Partners */}
+      {!isCollapsed && user?.role === 'partner' && currentOrderDetails && (
+        <div className="px-2 py-4 border-t border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+          <h3 className="px-2 text-xs font-semibold text-blue-600 uppercase tracking-wide mb-3 flex items-center">
+            <ClockIcon className="h-4 w-4 mr-1" />
+            Current Active Order
+          </h3>
+          <div className="bg-white rounded-lg p-3 shadow-sm border border-blue-200">
+            <div className="space-y-3">
+              {/* Order ID and Status */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-gray-900">
+                  #{currentOrderDetails.orderId}
+                </span>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                  currentOrderDetails.status === 'PREP' ? 'bg-yellow-100 text-yellow-800' :
+                  currentOrderDetails.status === 'PICKED' ? 'bg-blue-100 text-blue-800' :
+                  currentOrderDetails.status === 'ON_ROUTE' ? 'bg-purple-100 text-purple-800' :
+                  'bg-green-100 text-green-800'
+                }`}>
+                  {currentOrderDetails.status}
+                </span>
+              </div>
+              
+              {/* Customer Info */}
+              <div className="space-y-1">
+                <div className="flex items-center text-xs text-gray-600">
+                  <UserIcon className="h-3 w-3 mr-1" />
+                  <span className="font-medium text-gray-900">{currentOrderDetails.customerName}</span>
+                </div>
+                <div className="flex items-center text-xs text-gray-600">
+                  <PhoneIcon className="h-3 w-3 mr-1" />
+                  <span>{currentOrderDetails.customerPhone}</span>
+                </div>
+                <div className="flex items-start text-xs text-gray-600">
+                  <MapPinIcon className="h-3 w-3 mr-1 mt-0.5 flex-shrink-0" />
+                  <span className="line-clamp-2">{currentOrderDetails.customerAddress}</span>
+                </div>
+              </div>
+              
+              {/* Order Amount */}
+              <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                <div className="flex items-center text-xs text-gray-600">
+                  <CurrencyRupeeIcon className="h-3 w-3 mr-1" />
+                  <span>Amount:</span>
+                </div>
+                <span className="text-sm font-bold text-green-600">
+                  ₹{currentOrderDetails.totalAmount}
+                </span>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="space-y-2 pt-2">
+                <Link
+                  to="/partner-dashboard"
+                  className="block w-full px-3 py-2 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition-colors text-center"
+                >
+                  View Full Details
+                </Link>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => window.open(`tel:${currentOrderDetails.customerPhone}`)}
+                    className="flex items-center justify-center px-2 py-1.5 bg-green-600 text-white text-xs font-medium rounded-md hover:bg-green-700 transition-colors"
+                  >
+                    <PhoneIcon className="h-3 w-3 mr-1" />
+                    Call
+                  </button>
+                  
+                  {currentOrderDetails.customerEmail && currentOrderDetails.customerEmail !== 'Not provided' && (
+                    <button
+                      onClick={() => window.open(`mailto:${currentOrderDetails.customerEmail}`)}
+                      className="flex items-center justify-center px-2 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-md hover:bg-purple-700 transition-colors"
+                    >
+                      📧 Email
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       {!isCollapsed && quickActions.length > 0 && (

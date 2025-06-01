@@ -1,6 +1,7 @@
 const { validationResult } = require('express-validator');
 const DeliveryPartner = require('../models/DeliveryPartner');
 const Order = require('../models/Order');
+const User = require('../models/User');
 
 // @desc    Get all partners (Manager view)
 // @route   GET /api/partners
@@ -124,26 +125,15 @@ const getAvailablePartners = async (req, res) => {
     const { lat, lng, maxDistance = 10 } = req.query;
 
     let query = {
-      status: 'available',
+      role: 'partner',
+      isAvailable: true,
       isActive: true
     };
 
-    // If location provided, find partners within radius
-    if (lat && lng) {
-      query.currentLocation = {
-        $near: {
-          $geometry: {
-            type: "Point",
-            coordinates: [parseFloat(lng), parseFloat(lat)]
-          },
-          $maxDistance: maxDistance * 1000 // Convert to meters
-        }
-      };
-    }
-
-    const availablePartners = await DeliveryPartner.find(query)
-      .select('name phone vehicleType vehicleNumber currentLocation stats.rating stats.totalDeliveries lastActive')
-      .sort({ 'stats.rating': -1, lastActive: -1 })
+    // Use User model instead of DeliveryPartner
+    const availablePartners = await User.find(query)
+      .select('name phone vehicleType vehicleNumber currentLocation stats.rating stats.totalDeliveries lastLogin email')
+      .sort({ 'stats.rating': -1, lastLogin: -1 })
       .limit(50);
 
     res.json({
@@ -468,35 +458,81 @@ const updateAvailability = async (req, res) => {
 
     const { status } = req.body;
 
-    const partner = await DeliveryPartner.findById(userId);
-    if (!partner) {
+    // Validate status
+    const validStatuses = ['🟢 Available', '🟡 Busy', '🔴 Offline'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Valid statuses: ' + validStatuses.join(', ')
+      });
+    }
+
+    // Use User model since auth system uses User with role 'partner'
+    const partner = await User.findById(userId);
+    if (!partner || partner.role !== 'partner') {
       return res.status(404).json({
         success: false,
         message: 'Partner not found'
       });
     }
 
-    partner.status = status;
-    partner.lastActive = new Date();
-    
-    await partner.save();
+    // Check if partner can change status
+    if (partner.currentOrder && status === '🔴 Offline') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot go offline while having an active order. Please complete or cancel the current order first.'
+      });
+    }
+
+    // If partner has an active order, they should be busy
+    if (partner.currentOrder && status === '🟢 Available') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot be available while having an active order. Please complete the current order first.'
+      });
+    }
+
+    // Update status using the model method
+    await partner.updateStatus(status);
 
     // Emit socket event for real-time updates
-    if (req.io) {
-      req.io.emit('partner_status_changed', {
+    const io = req.app.get('io');
+    if (io) {
+      // Notify all managers about partner status change
+      io.to('role_manager').emit('partner-status-updated', {
         partnerId: userId,
-        status,
+        partnerName: partner.name,
+        partnerEmail: partner.email,
+        status: status,
+        statusText: partner.getStatusText(),
+        statusEmoji: partner.getStatusEmoji(),
+        isAvailable: partner.isAvailable,
         timestamp: new Date()
       });
+
+      // Notify the partner about successful status update
+      io.to(`user_${userId}`).emit('status-update-confirmed', {
+        status: status,
+        statusText: partner.getStatusText(),
+        statusEmoji: partner.getStatusEmoji(),
+        isAvailable: partner.isAvailable,
+        timestamp: new Date()
+      });
+
+      console.log(`✅ Partner status updated: ${partner.name} -> ${status}`);
     }
 
     res.json({
       success: true,
-      message: 'Availability updated successfully',
+      message: `Status updated to ${partner.getStatusText()}`,
       data: {
         partnerId: userId,
-        status,
-        lastActive: partner.lastActive
+        partnerName: partner.name,
+        status: status,
+        statusText: partner.getStatusText(),
+        statusEmoji: partner.getStatusEmoji(),
+        isAvailable: partner.isAvailable,
+        lastActive: new Date()
       }
     });
 
@@ -526,19 +562,21 @@ const updateLocation = async (req, res) => {
 
     const { latitude, longitude } = req.body;
 
-    const partner = await DeliveryPartner.findById(userId);
-    if (!partner) {
+    // Use User model instead of DeliveryPartner since auth system uses User with role 'partner'
+    const partner = await User.findById(userId);
+    if (!partner || partner.role !== 'partner') {
       return res.status(404).json({
         success: false,
         message: 'Partner not found'
       });
     }
 
+    // Update location in the User model format
     partner.currentLocation = {
-      type: 'Point',
-      coordinates: [longitude, latitude]
+      latitude,
+      longitude,
+      lastUpdated: new Date()
     };
-    partner.lastActive = new Date();
     
     await partner.save();
 
@@ -557,7 +595,7 @@ const updateLocation = async (req, res) => {
       data: {
         partnerId: userId,
         location: { latitude, longitude },
-        lastActive: partner.lastActive
+        lastActive: partner.currentLocation.lastUpdated
       }
     });
 
@@ -868,6 +906,59 @@ const getDeliveryHistory = async (req, res) => {
   }
 };
 
+// @desc    Get available status options
+// @route   GET /api/partners/status-options
+// @access  Private (Partner)
+const getStatusOptions = async (req, res) => {
+  try {
+    const { role } = req.user;
+
+    if (role !== 'partner') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only delivery partners can access status options'
+      });
+    }
+
+    const statusOptions = [
+      {
+        value: '🟢 Available',
+        label: 'Available',
+        emoji: '🟢',
+        description: 'Ready to accept new orders'
+      },
+      {
+        value: '🟡 Busy',
+        label: 'Busy',
+        emoji: '🟡',
+        description: 'Currently handling an order'
+      },
+      {
+        value: '🔴 Offline',
+        label: 'Offline',
+        emoji: '🔴',
+        description: 'Not available for orders'
+      }
+    ];
+
+    res.json({
+      success: true,
+      data: {
+        statusOptions,
+        currentStatus: req.user.status || '🟢 Available'
+      }
+    });
+
+  } catch (error) {
+    console.error('Get status options error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching status options',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllPartners,
   getAvailablePartners,
@@ -878,5 +969,6 @@ module.exports = {
   updateLocation,
   getPartnerAnalytics,
   getMyStatistics,
-  getDeliveryHistory
+  getDeliveryHistory,
+  getStatusOptions
 }; 
