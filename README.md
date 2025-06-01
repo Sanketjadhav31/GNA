@@ -1,57 +1,65 @@
-# Zomato Ops Pro
+# 🍕 FoodFlow - Food Delivery Management System
 
-A comprehensive food delivery management system built with React.js frontend and Node.js backend.
+A comprehensive real-time food delivery management system built with React.js, Node.js, Express.js, MongoDB, and Socket.io.
 
 ## 🚀 Features
 
-### Restaurant Manager Dashboard
-- Order management and tracking
-- Real-time order status updates
-- Delivery partner assignment
-- Performance analytics
-- Customer information management
+### 🏪 Restaurant Manager Dashboard
+- **Order Management**: Create, track, and manage food orders
+- **Partner Assignment**: Assign delivery partners to orders
+- **Real-time Updates**: Live order status tracking
+- **Analytics**: View order statistics and performance metrics
+- **Partner Management**: Monitor available delivery partners
 
-### Delivery Partner Dashboard
-- Order assignment and tracking
-- Availability toggle
-- Earnings tracking
-- Performance metrics
-- Real-time notifications
+### 🚚 Delivery Partner Dashboard
+- **Order Tracking**: View assigned orders and delivery tasks
+- **Status Updates**: Update order status in real-time (PREP → READY → PICKED → ON_ROUTE → DELIVERED)
+- **Availability Toggle**: Set availability status for new orders
+- **Performance Stats**: Track deliveries, earnings, and ratings
+- **Real-time Notifications**: Instant updates for new assignments
 
-### Core Features
-- **Authentication System**: Secure login/registration for both roles
-- **Real-time Notifications**: Live updates for orders and deliveries
-- **Dark Mode Support**: Complete dark/light theme switching
-- **Responsive Design**: Mobile-first responsive UI
-- **Order Management**: Complete order lifecycle management
-- **Partner Management**: Delivery partner availability and assignment
+### 🔄 Real-time Features
+- **Socket.io Integration**: Live updates across all users
+- **Order Status Sync**: Real-time status changes
+- **Partner Availability**: Live partner status updates
+- **Notifications**: Instant alerts for order updates
 
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **React.js** - UI Framework
-- **Tailwind CSS** - Styling
+- **React.js** - User interface
 - **React Router** - Navigation
-- **Axios** - HTTP Client
-- **Context API** - State Management
+- **Axios** - HTTP client
+- **Socket.io Client** - Real-time communication
+- **Tailwind CSS** - Styling
 
 ### Backend
-- **Node.js** - Runtime Environment
-- **Express.js** - Web Framework
+- **Node.js** - Runtime environment
+- **Express.js** - Web framework
 - **MongoDB** - Database
 - **Mongoose** - ODM
+- **Socket.io** - Real-time communication
 - **JWT** - Authentication
-- **Express Rate Limit** - API Rate Limiting
-- **Helmet** - Security Headers
+- **bcryptjs** - Password hashing
 
-## 📦 Installation & Setup
+## 📋 Prerequisites
 
-### Prerequisites
-- Node.js (v14 or higher)
-- MongoDB (local or cloud)
-- Git
+Before running this application, make sure you have the following installed:
 
-### Backend Setup
+- **Node.js** (v14 or higher)
+- **npm** (v6 or higher)
+- **MongoDB** (v4.4 or higher)
+- **Git**
+
+## 🔧 Installation & Setup
+
+### 1. Clone the Repository
+```bash
+git clone <repository-url>
+cd GNA
+```
+
+### 2. Backend Setup
 ```bash
 # Navigate to backend directory
 cd backend
@@ -60,114 +68,263 @@ cd backend
 npm install
 
 # Create environment file
-cp .env.example .env
+copy .env.example .env
+# OR on Linux/Mac:
+# cp .env.example .env
 
-# Configure your environment variables in .env
-# MONGODB_URI=mongodb://localhost:27017/zomato-ops-pro
-# JWT_SECRET=your-secret-key
+# Edit .env file with your configuration:
+# MONGODB_URI=mongodb://localhost:27017/fooddelivery
+# JWT_SECRET=your_jwt_secret_key
+# PORT=5000
 # NODE_ENV=development
-
-# Start the server
-npm run dev
 ```
 
-### Frontend Setup
+### 3. Frontend Setup
 ```bash
-# Navigate to frontend directory
+# Navigate to frontend directory (from project root)
 cd frontend
 
 # Install dependencies
 npm install
 
-# Start the development server
+# Create environment file
+copy .env.example .env
+# OR on Linux/Mac:
+# cp .env.example .env
+
+# Edit .env file:
+# REACT_APP_BACKEND_URL=http://localhost:5000
+```
+
+### 4. Database Setup
+Make sure MongoDB is running on your system:
+
+```bash
+# Start MongoDB service
+# Windows:
+net start MongoDB
+
+# Linux/Mac:
+sudo systemctl start mongod
+# OR
+brew services start mongodb-community
+```
+
+## 🚀 Running the Application
+
+### Method 1: Run Both Services Separately
+
+#### Start Backend Server
+```bash
+# From project root
+cd backend
 npm start
 ```
+Backend will run on: `http://localhost:5000`
+
+#### Start Frontend Server
+```bash
+# From project root (in new terminal)
+cd frontend
+npm start
+```
+Frontend will run on: `http://localhost:3000`
+
+### Method 2: Using PowerShell (Windows)
+```powershell
+# Start backend
+cd backend; npm start
+
+# In new terminal, start frontend
+cd frontend; npm start
+```
+
+## 👥 User Accounts & Testing
+
+### Default Test Accounts
+
+#### Restaurant Manager
+- **Email**: `manager@restaurant.com`
+- **Password**: `password123`
+- **Role**: Restaurant Manager
+
+#### Delivery Partner
+- **Email**: `partner@delivery.com`
+- **Password**: `password123`
+- **Role**: Delivery Partner
+
+### Creating New Accounts
+1. Go to `http://localhost:3000/register`
+2. Fill in the registration form
+3. Select your role (Restaurant Manager or Delivery Partner)
+4. For delivery partners, select vehicle type
+5. Complete registration
+
+## 📱 Usage Guide
+
+### For Restaurant Managers
+
+1. **Login** to your account
+2. **Create Orders**:
+   - Fill customer details
+   - Add order items and total amount
+   - Set priority and estimated delivery time
+3. **Assign Partners**:
+   - View available delivery partners
+   - Assign partners to orders
+   - Track order progress
+4. **Monitor Dashboard**:
+   - View order statistics
+   - Track active orders
+   - Monitor partner availability
+
+### For Delivery Partners
+
+1. **Login** to your account
+2. **Set Availability**:
+   - Toggle availability status
+   - Receive order assignments when available
+3. **Manage Orders**:
+   - View assigned orders
+   - Update order status step by step
+   - Complete deliveries
+4. **Track Performance**:
+   - View delivery statistics
+   - Monitor earnings and ratings
+
+## 🔄 Order Status Flow
+
+```
+PENDING → PREP → READY → PICKED → ON_ROUTE → DELIVERED
+```
+
+- **PENDING**: Order created, waiting for partner assignment
+- **PREP**: Partner assigned, food being prepared
+- **READY**: Food ready for pickup
+- **PICKED**: Partner picked up the order
+- **ON_ROUTE**: Order is on the way to customer
+- **DELIVERED**: Order successfully delivered
 
 ## 🌐 API Endpoints
 
 ### Authentication
 - `POST /api/auth/register` - User registration
 - `POST /api/auth/login` - User login
-- `GET /api/auth/me` - Get current user
-- `PUT /api/auth/profile` - Update profile
 
 ### Orders
-- `GET /api/orders` - Get orders (filtered by role)
-- `POST /api/orders` - Create new order
-- `GET /api/orders/:id` - Get order details
-- `PUT /api/orders/:id` - Update order
-- `PUT /api/orders/:id/status` - Update order status
-- `PUT /api/orders/:id/assign` - Assign delivery partner
+- `GET /api/orders` - Get orders (filtered by user role)
+- `POST /api/orders` - Create new order (Restaurant Manager)
+- `PUT /api/orders/:id/assign` - Assign partner to order
+- `PUT /api/orders/:id/status` - Update order status (Delivery Partner)
 
 ### Partners
-- `GET /api/partners/available` - Get available partners
-- `PUT /api/partners/availability` - Toggle availability
-- `GET /api/partners/my/stats` - Get partner statistics
+- `GET /api/partners` - Get all delivery partners
+- `GET /api/partners/my/active-orders` - Get partner's active orders
+- `PUT /api/partners/availability` - Update partner availability
 
-## 🎨 UI Features
+## 🔧 Environment Variables
 
-- **Modern Design**: Clean and professional interface
-- **Dark Mode**: Complete dark theme support
-- **Responsive**: Works on all device sizes
-- **Notifications**: Real-time notification system
-- **Status Badges**: Color-coded order status indicators
-- **Interactive Forms**: Enhanced form validation and UX
+### Backend (.env)
+```env
+MONGODB_URI=mongodb://localhost:27017/fooddelivery
+JWT_SECRET=your_super_secret_jwt_key
+PORT=5000
+NODE_ENV=development
+```
 
-## 🔐 Security Features
+### Frontend (.env)
+```env
+REACT_APP_BACKEND_URL=http://localhost:5000
+```
 
-- JWT-based authentication
-- Password hashing with bcrypt
-- Rate limiting on API endpoints
-- CORS configuration
-- Helmet security headers
-- Input validation and sanitization
+## 🐛 Troubleshooting
 
-## 📱 User Roles
+### Common Issues
 
-### Restaurant Manager
-- Create and manage orders
-- Assign delivery partners
-- Track order progress
-- View performance analytics
-- Manage customer information
+#### 1. MongoDB Connection Error
+```bash
+# Make sure MongoDB is running
+# Windows:
+net start MongoDB
 
-### Delivery Partner
-- View assigned orders
-- Update order status
-- Toggle availability
-- Track earnings
-- View performance metrics
+# Check if MongoDB is accessible
+mongo --eval "db.adminCommand('ismaster')"
+```
 
-## 🚀 Deployment
+#### 2. Port Already in Use
+```bash
+# Kill process using port 5000
+netstat -ano | findstr :5000
+taskkill /PID <process_id> /F
 
-### Backend Deployment
-1. Set up MongoDB Atlas or your preferred database
-2. Configure environment variables
-3. Deploy to your preferred platform (Heroku, AWS, etc.)
+# Kill process using port 3000
+netstat -ano | findstr :3000
+taskkill /PID <process_id> /F
+```
 
-### Frontend Deployment
-1. Build the production version: `npm run build`
-2. Deploy to your preferred platform (Netlify, Vercel, etc.)
+#### 3. CORS Issues
+Make sure backend CORS is configured for frontend URL:
+```javascript
+// In backend/server.js
+const corsOptions = {
+  origin: ['http://localhost:3000'],
+  credentials: true
+};
+```
+
+#### 4. Socket.io Connection Issues
+- Check if backend is running on correct port
+- Verify REACT_APP_BACKEND_URL in frontend .env
+- Check browser console for WebSocket errors
+
+### 5. Orders Not Showing on Dashboard
+- Check browser console for API errors
+- Verify user authentication
+- Ensure proper role-based access
+
+## 📝 Development Notes
+
+### Project Structure
+```
+GNA/
+├── backend/
+│   ├── models/          # Database models
+│   ├── routes/          # API routes
+│   ├── middleware/      # Authentication & validation
+│   └── server.js        # Main server file
+├── frontend/
+│   ├── src/
+│   │   ├── components/  # React components
+│   │   ├── contexts/    # React contexts
+│   │   └── pages/       # Page components
+│   └── public/
+└── README.md
+```
+
+### Key Features Implementation
+- **Real-time Updates**: Socket.io rooms for role-based messaging
+- **Authentication**: JWT-based auth with role management
+- **Order Management**: Complete CRUD operations with status tracking
+- **Partner Management**: Availability tracking and assignment logic
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
 
-## 👨‍💻 Author
+## 📞 Support
 
-**Kalash Mishra**
-- GitHub: [@kalashmishra21](https://github.com/kalashmishra21)
+For support or questions, please contact:
+- **Email**: support@foodflow.com
+- **GitHub Issues**: Create an issue in this repository
 
-## 🙏 Acknowledgments
+---
 
-- Built as part of GNA Zomato Project Internship
-- Inspired by modern food delivery platforms
-- Thanks to the open-source community for the amazing tools and libraries 
+**Happy Coding! 🚀** 
